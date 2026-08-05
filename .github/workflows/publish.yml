@@ -1,0 +1,79 @@
+name: publish dashboard
+
+# Rebuilds the dashboard from the history already committed and deploys it to Pages.
+#
+# This never touches mobile.de. Use it to publish a dashboard change, or to bring Pages up to
+# date with the latest commit, without waiting for — or provoking — a scrape.
+#
+#   Actions -> "publish dashboard" -> Run workflow
+#
+# Deliberately NOT triggered by changes to history/, because the scrape workflow already
+# publishes after it commits; two workflows deploying at once would race.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish.yml"
+      - "public/index.html"
+      - "src/build-site.js"
+      - "src/queries.js"
+      - "src/history.js"
+      - "src/db.js"
+      - "config.json"
+
+# No contents:write — this job only reads the repo. Nothing is committed.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Rebuild the database from committed history
+        run: node --experimental-sqlite --no-warnings src/history.js import
+
+      - name: Build dashboard
+        run: node --experimental-sqlite --no-warnings src/build-site.js | tee build.out
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Published from $(git rev-parse --short HEAD) — no scrape"
+            echo ""
+            echo '```'
+            cat build.out 2>/dev/null || echo "(build produced no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

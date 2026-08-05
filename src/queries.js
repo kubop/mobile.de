@@ -192,8 +192,14 @@ export function getListingDetail(db, id) {
   if (!listing) return null;
   return {
     listing,
+    // `raw` (the full original listing JSON, ~2.3 KB a snapshot) is dropped: nothing in the UI
+    // reads it, the static build would bundle all of it into data.json, and it isn't in the
+    // committed history — so keeping it would also make local and CI builds differ. Dropping
+    // it in JS rather than listing columns keeps this correct as the schema grows.
     snapshots: db
-      .prepare("SELECT * FROM snapshot WHERE listing_id = ? ORDER BY seen_at, id").all(id),
+      .prepare("SELECT * FROM snapshot WHERE listing_id = ? ORDER BY seen_at, id")
+      .all(id)
+      .map(({ raw, ...rest }) => rest),
     changes: db
       .prepare("SELECT * FROM change WHERE listing_id = ? ORDER BY at DESC, id DESC").all(id),
     events: db
