@@ -367,6 +367,13 @@
 
   // ------------------------------------------------------------------- charts
   const PLOT = { w: 640, h: 240, l: 54, r: 14, t: 12, b: 30 };
+  /**
+   * The scatter gets far more vertical room than the line charts. Its points spread across both
+   * axes, and a 2.7:1 box squashed them into a band; the trend lines, which only need to show a
+   * shape over time, stay wide and short. Sized so the card sits level with the activity feed
+   * beside it (feed max-height 420px).
+   */
+  const SCATTER_PLOT = { ...PLOT, h: 396, b: 34 };
 
   function emptyNote(host, msg) {
     host.replaceChildren(el("div", { class: "empty", text: msg }));
@@ -460,13 +467,15 @@
     const pts = rows.filter((r) => r.price_eur != null && r.mileage_km != null);
     if (!pts.length) return emptyNote(host, "No listings with both a price and a mileage figure.");
 
-    const { w, h, l, r: rr, t, b } = PLOT;
+    const { w, h, l, r: rr, t, b } = SCATTER_PLOT;
     const iw = w - l - rr;
     const ih = h - t - b;
     const xs = pts.map((p) => p.mileage_km);
     const ys = pts.map((p) => p.price_eur);
     const X0 = niceTicks(Math.min(0, ...xs), Math.max(...xs), 5);
-    const Y0 = niceTicks(Math.min(...ys), Math.max(...ys), 4);
+    // More height earns more gridlines: 4 over this range left ~100k between them, too coarse
+    // to read a point's price off the axis.
+    const Y0 = niceTicks(Math.min(...ys), Math.max(...ys), 7);
     const X = (v) => l + ((v - X0.lo) / (X0.hi - X0.lo)) * iw;
     const Y = (v) => t + ih - ((v - Y0.lo) / (Y0.hi - Y0.lo)) * ih;
 
