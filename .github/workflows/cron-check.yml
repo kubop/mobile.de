@@ -1,0 +1,28 @@
+name: cron check
+
+# TEMPORARY DIAGNOSTIC — delete once the question is settled.
+#
+# Two scheduled slots of "scrape and publish" passed with no run at all: not queued, not
+# delayed, not failed. Every setting that could explain it is correct (schedule on the default
+# branch, workflow active, valid cron), so this isolates the one thing left to test — whether
+# GitHub's scheduler fires for this repository at all.
+#
+# It touches nothing: no checkout, no network, no commit. Every 5 minutes is the shortest
+# interval GitHub accepts, so a working scheduler shows up within ~10 minutes.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Report how this run was triggered
+        run: |
+          echo "event      : ${{ github.event_name }}"
+          echo "at         : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "ref        : ${{ github.ref }}"
+          echo "If event is 'schedule', GitHub's scheduler works and the problem is elsewhere."
