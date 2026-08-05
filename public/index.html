@@ -529,7 +529,14 @@
   // --------------------------------------------------------------------- state
   let DATA = null;
   let STATIC_MODE = false; // true when served as a static site with no live API behind it
-  const state = { country: "", seller: "", condition: "", q: "", includeRemoved: "active", sort: "price_eur", dir: 1 };
+
+  const DEFAULT_VIEW = {
+    q: "", country: "", seller: "", condition: "", includeRemoved: "active",
+    sort: "price_eur", dir: 1,
+  };
+  const state = { ...DEFAULT_VIEW };
+  /** Explanations for filters that had to be dropped on load (see reconcileView). */
+  let viewNotices = [];
 
   const histByListing = new Map();
 
@@ -550,52 +557,81 @@
   }
 
   // -------------------------------------------------------------------- render
-  function renderFilters() {
+  /**
+   * The filter controls are built ONCE and then only have their values synced. Rebuilding them
+   * on every render destroyed and recreated the search input, so it lost focus after the first
+   * keystroke and you could never type more than one character.
+   */
+  function buildFilters() {
     const uniq = (f) => [...new Set(DATA.listings.map(f).filter(Boolean))].sort();
-    const sel = (label, key, opts, allLabel) =>
-      el("label", {}, [
-        label,
-        el(
-          "select",
-          { onchange: (e) => { state[key] = e.target.value; render(); } },
-          [el("option", { value: "", text: allLabel }), ...opts.map((o) =>
-            el("option", { value: o, text: o, ...(state[key] === o ? { selected: "" } : {}) }),
-          )],
-        ),
-      ]);
+    const opt = (value, label) => el("option", { value, text: label });
+    const onPick = (key) => (e) => setState({ [key]: e.target.value });
+
+    const dropdown = (id, key, options) =>
+      el("select", { id, onchange: onPick(key) }, options);
 
     $("#filters").replaceChildren(
       el("label", {}, [
         "Search",
         el("input", {
-          type: "search", placeholder: "id, trim, seller, city…", value: state.q,
-          oninput: (e) => { state.q = e.target.value; render(); },
+          type: "search", id: "fSearch", placeholder: "id, trim, seller, city…",
+          oninput: onPick("q"),
         }),
       ]),
-      sel("Country", "country", uniq((r) => r.country), "All"),
-      sel("Seller", "seller", uniq((r) => r.seller_name), "All"),
+      el("label", {}, [
+        "Country",
+        dropdown("fCountry", "country", [opt("", "All"), ...uniq((r) => r.country).map((c) => opt(c, c))]),
+      ]),
+      el("label", {}, [
+        "Seller",
+        dropdown("fSeller", "seller", [opt("", "All"), ...uniq((r) => r.seller_name).map((s) => opt(s, s))]),
+      ]),
       el("label", {}, [
         "Condition",
-        el("select", { onchange: (e) => { state.condition = e.target.value; render(); } }, [
-          el("option", { value: "", text: "All" }),
-          el("option", { value: "used", text: "Used (>1,000 km)", ...(state.condition === "used" ? { selected: "" } : {}) }),
-          el("option", { value: "new", text: "New / delivery km", ...(state.condition === "new" ? { selected: "" } : {}) }),
+        dropdown("fCondition", "condition", [
+          opt("", "All"),
+          opt("used", "Used (>1,000 km)"),
+          opt("new", "New / delivery km"),
         ]),
       ]),
       el("label", {}, [
         "Show",
-        el("select", { onchange: (e) => { state.includeRemoved = e.target.value; render(); } }, [
-          el("option", { value: "active", text: "Live only", ...(state.includeRemoved === "active" ? { selected: "" } : {}) }),
-          el("option", { value: "all", text: "Live + removed", ...(state.includeRemoved === "all" ? { selected: "" } : {}) }),
-          el("option", { value: "removed", text: "Removed only", ...(state.includeRemoved === "removed" ? { selected: "" } : {}) }),
+        dropdown("fShow", "includeRemoved", [
+          opt("active", "Live only"),
+          opt("all", "Live + removed"),
+          opt("removed", "Removed only"),
         ]),
       ]),
+      el("button", {
+        class: "ghost", id: "fReset", hidden: "",
+        title: "Clear filters and sorting",
+        text: "Reset view",
+        onclick: () => setState({ ...DEFAULT_VIEW }),
+      }),
     );
+    syncFilters();
+  }
+
+  /** Push state into the existing controls without recreating them. */
+  function syncFilters() {
+    const set = (sel, v) => {
+      const n = $(sel);
+      // Only write when it differs, so we never disturb the caret while someone is typing.
+      if (n && n.value !== v) n.value = v;
+    };
+    set("#fSearch", state.q);
+    set("#fCountry", state.country);
+    set("#fSeller", state.seller);
+    set("#fCondition", state.condition);
+    set("#fShow", state.includeRemoved);
+    const reset = $("#fReset");
+    if (reset) reset.hidden = isDefaultView();
   }
 
   function renderBanners() {
     const b = [];
     const o = DATA.overview;
+    for (const n of viewNotices) b.push(el("div", { class: "banner warn", html: `<span>${esc(n)}</span>` }));
     if (!o.lastRun) {
       b.push(el("div", { class: "banner bad", html: "<b>No successful scrape yet.</b> Run <code>npm run scrape</code>." }));
     }
@@ -667,6 +703,75 @@
     { k: "first_seen_at", label: "First seen", fmt: (r) => dshort(r.first_seen_at) },
     { k: "removed_at", label: "Status", fmt: (r) => (r.removed_at ? `removed ${dshort(r.removed_at)}` : "live") },
   ];
+
+  // ------------------------------------------------------- persisted view (filters + sort)
+  const VIEW_KEY = "mobilede.view";
+
+  const isDefaultView = () => Object.keys(DEFAULT_VIEW).every((k) => state[k] === DEFAULT_VIEW[k]);
+
+  /**
+   * Every stored field is validated against what the UI can actually represent. Anything
+   * unrecognised falls back to the default, so a stale or hand-edited value can't leave the
+   * dashboard in a state with no visible cause (e.g. sorting by a column that no longer exists,
+   * or a "Show" mode that filters everything out).
+   */
+  function loadView() {
+    let raw;
+    try {
+      raw = JSON.parse(localStorage.getItem(VIEW_KEY) ?? "{}");
+    } catch {
+      return;
+    }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+
+    const sortable = new Set(COLS.filter((c) => c.sortable !== false).map((c) => c.k));
+    if (typeof raw.q === "string") state.q = raw.q.slice(0, 200);
+    if (typeof raw.country === "string") state.country = raw.country;
+    if (typeof raw.seller === "string") state.seller = raw.seller;
+    if (["", "used", "new"].includes(raw.condition)) state.condition = raw.condition;
+    if (["active", "all", "removed"].includes(raw.includeRemoved)) state.includeRemoved = raw.includeRemoved;
+    if (sortable.has(raw.sort)) state.sort = raw.sort;
+    if (raw.dir === 1 || raw.dir === -1) state.dir = raw.dir;
+  }
+
+  function saveView() {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(Object.fromEntries(
+        Object.keys(DEFAULT_VIEW).map((k) => [k, state[k]]),
+      )));
+    } catch {
+      /* private mode / storage full — the view just won't persist */
+    }
+  }
+
+  function setState(patch) {
+    Object.assign(state, patch);
+    viewNotices = []; // any deliberate change supersedes a load-time notice
+    saveView();
+    render();
+  }
+
+  /**
+   * Country and seller come from the data, so a remembered value can refer to something that
+   * is no longer present (a different search URL, a rebuilt database). Silently keeping it
+   * would show an empty table with no explanation, so drop it and say why.
+   */
+  function reconcileView() {
+    viewNotices = [];
+    const checks = [
+      ["country", "Country", new Set(DATA.listings.map((r) => r.country).filter(Boolean))],
+      ["seller", "Seller", new Set(DATA.listings.map((r) => r.seller_name).filter(Boolean))],
+    ];
+    let changed = false;
+    for (const [key, label, valid] of checks) {
+      if (state[key] && !valid.has(state[key])) {
+        viewNotices.push(`${label} filter “${state[key]}” was cleared — no listings match it any more.`);
+        state[key] = "";
+        changed = true;
+      }
+    }
+    if (changed) saveView();
+  }
 
   // --------------------------------------------------------------- column visibility
   const HIDDEN_KEY = "mobilede.hiddenCols";
@@ -768,11 +873,9 @@
       el("tr", {}, cols.map((c) =>
         el("th", {
           class: c.num ? "num" : null,
-          onclick: c.sortable === false ? null : () => {
-            if (state.sort === c.k) state.dir *= -1;
-            else { state.sort = c.k; state.dir = 1; }
-            render();
-          },
+          onclick: c.sortable === false
+            ? null
+            : () => setState(state.sort === c.k ? { dir: state.dir * -1 } : { sort: c.k, dir: 1 }),
           html: esc(c.label) + (state.sort === c.k ? ` <span class="arrow">${state.dir > 0 ? "▲" : "▼"}</span>` : ""),
         }),
       )),
@@ -862,7 +965,7 @@
     const rows = applyFilters(DATA.listings);
     const visibleIds = new Set(rows.map((r) => r.id));
 
-    renderFilters();
+    syncFilters();
     renderBanners();
     renderTiles(rows);
 
@@ -1010,6 +1113,15 @@
       if (!histByListing.has(p.listing_id)) histByListing.set(p.listing_id, []);
       histByListing.get(p.listing_id).push(p);
     }
+
+    // Restore the saved view, then drop anything the current data can't satisfy. Both need
+    // COLS and DATA, so this happens here rather than at module scope.
+    loadView();
+    reconcileView();
+    // Write the validated result straight back, so storage never keeps a value the UI is
+    // silently ignoring — what's stored is always what's actually in effect.
+    saveView();
+    buildFilters();
 
     document.title = `${DATA.label} — mobile.de tracker`;
     $("#title").textContent = DATA.label;

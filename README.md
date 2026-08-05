@@ -226,6 +226,15 @@ stored as `NULL` and shown as `—`.
 Filters at the top scope every chart, the feed and the table together. Light and dark themes
 are both explicitly styled; the chart palette is validated for colour-vision deficiency.
 
+Your view is remembered per browser in `localStorage` — the filters, the sort column and
+direction (`mobilede.view`) and the hidden columns (`mobilede.hiddenCols`). **Reset view**
+appears in the filter row whenever anything is non-default and clears filters and sorting;
+hidden columns are a separate preference, restored with **Show all** in the Columns popover.
+
+Stored values are validated on load, so a stale one can never leave the dashboard in a state
+with no visible cause. A filter naming a seller or country that is no longer in the data is
+dropped with a banner explaining why, rather than silently showing an empty table.
+
 Trend charts need two scrapes before they show a line, and say so until then.
 
 ---
