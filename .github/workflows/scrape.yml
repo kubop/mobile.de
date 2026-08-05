@@ -1,0 +1,164 @@
+name: scrape and publish
+
+# Scrapes the configured mobile.de search, commits the new history, and republishes the
+# dashboard to GitHub Pages.
+#
+# Why this works on a GitHub runner at all: mobile.de blocks plain HTTP and headless Chrome,
+# but serves a real Chrome that was started as an ordinary process. xvfb provides the display
+# that makes "headed" possible on a runner. Verified by .github/workflows/probe-cloud.yml —
+# the runner's Azure IP is not itself a problem.
+
+on:
+  schedule:
+    # UTC. Three times a day, deliberately off the hour — scheduled runs are best-effort and
+    # GitHub delays them when the hour is busy.
+    - cron: "17 6 * * *"
+    - cron: "17 12 * * *"
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Ignore the minimum-interval guard"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # commit the new history
+  pages: write # publish the dashboard
+  id-token: write # required by deploy-pages
+
+# Never let two scrapes overlap; a queued one waits rather than doubling up on requests.
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      scraped: ${{ steps.scrape.outputs.scraped }}
+      built: ${{ steps.build.outputs.built }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+
+      - name: Rebuild database from committed history
+        run: node --experimental-sqlite --no-warnings src/history.js import
+
+      - name: Scrape
+        id: scrape
+        run: |
+          set -o pipefail
+          FORCE=""
+          if [ "${{ inputs.force }}" = "true" ]; then FORCE="--force"; fi
+          # Headed Chrome needs a display; a headless one is blocked.
+          if xvfb-run -a --server-args="-screen 0 1440x900x24" \
+               node --experimental-sqlite --no-warnings src/scrape.js $FORCE 2>&1 | tee scrape.out; then
+            echo "scraped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "scraped=false" >> "$GITHUB_OUTPUT"
+            echo "::error::scrape failed — see the log above"
+            exit 1
+          fi
+
+      - name: Export history
+        # Runs even on failure: a failed run is still recorded in the `run` table, and keeping
+        # that record is how gaps in the history stay explainable.
+        if: always()
+        run: node --experimental-sqlite --no-warnings src/history.js export
+
+      - name: Guard against history loss
+        if: always()
+        # The history is append-only. If it ever shrinks, something went wrong upstream (an
+        # empty database because an earlier step died, say) and committing would destroy real
+        # data. Refuse, and restore the committed version.
+        run: |
+          fail=0
+          for t in run listing snapshot change event; do
+            old=$(git show "HEAD:history/$t.ndjson" 2>/dev/null | wc -l || echo 0)
+            new=$(wc -l < "history/$t.ndjson" 2>/dev/null || echo 0)
+            echo "$t: $old -> $new"
+            if [ "$new" -lt "$old" ]; then
+              echo "::error::history/$t.ndjson shrank ($old -> $new lines) — refusing to commit"
+              fail=1
+            fi
+          done
+          if [ "$fail" = "1" ]; then
+            git checkout -- history/ 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Commit history
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add history/
+          if git diff --cached --quiet; then
+            echo "no history changes to commit"
+            exit 0
+          fi
+          SUMMARY=$(node -e "
+            const fs=require('fs');
+            const runs=fs.readFileSync('history/run.ndjson','utf8').trim().split('\n').map(JSON.parse);
+            const r=runs[runs.length-1]??{};
+            process.stdout.write(r.status==='ok'
+              ? \`\${r.listings_seen} listings, \${r.new_count} new, \${r.removed_count} removed, \${r.changed_count} changed\`
+              : \`run failed: \${(r.error??'unknown').slice(0,80)}\`);
+          ")
+          git commit -m "history: $SUMMARY [skip ci]"
+          # Another run may have pushed in the meantime.
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main && git push origin HEAD:main && break
+            echo "push attempt $i failed, retrying"; sleep 5
+          done
+
+      - name: Build dashboard
+        id: build
+        if: always()
+        run: |
+          node --experimental-sqlite --no-warnings src/build-site.js
+          echo "built=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Pages artifact
+        if: always() && hashFiles('dist/**') != ''
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Scrape result"
+            echo ""
+            echo '```'
+            tail -30 scrape.out 2>/dev/null || echo "(no output captured)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: scrape
+    # Publish even if the scrape failed, so the dashboard keeps showing the last good data
+    # (with its "last attempt failed" banner) rather than going stale silently. Skipped only
+    # when there is no artifact to deploy.
+    if: always() && needs.scrape.outputs.built == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

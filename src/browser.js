@@ -12,13 +12,25 @@ import { paths, sleep } from "./config.js";
  * Do not "simplify" this into chromium.launch() — that is exactly what gets blocked.
  */
 
-const CHROME_CANDIDATES = [
-  "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-  `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
-  "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
-  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-];
+const IS_WINDOWS = process.platform === "win32";
+
+const CHROME_CANDIDATES = IS_WINDOWS
+  ? [
+      "C:/Program Files/Google/Chrome/Application/chrome.exe",
+      "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+      `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
+      "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+      "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    ]
+  : [
+      // Linux (incl. GitHub Actions runners, which ship google-chrome-stable) and macOS.
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/chromium",
+      "/opt/google/chrome/chrome",
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ];
 
 export function findBrowserExecutable(override) {
   if (override) {
@@ -27,7 +39,7 @@ export function findBrowserExecutable(override) {
   }
   for (const c of CHROME_CANDIDATES) if (c && fs.existsSync(c)) return c;
   throw new Error(
-    "No Chrome or Edge found. Set browser.executablePath in config.json to your chrome.exe.",
+    `No Chrome found for platform ${process.platform}. Set browser.executablePath in config.json.`,
   );
 }
 
@@ -62,7 +74,8 @@ async function waitForCdp(port, timeoutMs = 30000) {
 
 function killTree(pid) {
   try {
-    execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+    if (IS_WINDOWS) execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+    else process.kill(pid, "SIGKILL");
   } catch {
     /* already gone */
   }
@@ -79,6 +92,8 @@ export async function openSession(cfg, log = console.log) {
   if (!cfg.browser?.keepProfile) fs.rmSync(paths.profile, { recursive: true, force: true });
   fs.mkdirSync(paths.profile, { recursive: true });
 
+  // Chrome must be started as an ordinary process (see the note above), so the flag list stays
+  // minimal and deliberately avoids anything that advertises automation.
   const args = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${path.resolve(paths.profile)}`,
@@ -89,11 +104,21 @@ export async function openSession(cfg, log = console.log) {
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
     "--disable-background-timer-throttling",
+    ...(cfg.browser?.extraArgs ?? []),
     "about:blank",
   ];
-  if (cfg.browser?.offscreen !== false) args.splice(4, 0, "--window-position=-32000,-32000");
+  // Only meaningful on a real desktop; under xvfb the display is already virtual.
+  const offscreen = IS_WINDOWS && cfg.browser?.offscreen !== false;
+  if (offscreen) args.splice(4, 0, "--window-position=-32000,-32000");
 
-  log(`launching ${path.basename(exe)} (CDP :${port}${cfg.browser?.offscreen !== false ? ", offscreen" : ""})`);
+  if (!IS_WINDOWS && !process.env.DISPLAY) {
+    throw new Error(
+      "No DISPLAY set. A headless browser is blocked by mobile.de, so this needs a real or " +
+        "virtual display — run under xvfb, e.g. `xvfb-run -a npm run scrape`.",
+    );
+  }
+
+  log(`launching ${path.basename(exe)} (CDP :${port}${offscreen ? ", offscreen" : ""})`);
   const proc = spawn(exe, args, { stdio: "ignore", windowsHide: true });
   proc.on("error", (e) => log(`browser process error: ${e.message}`));
 

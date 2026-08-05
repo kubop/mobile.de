@@ -1,0 +1,8 @@
+# The history files are written both by Windows (local scrapes) and Linux (GitHub Actions).
+# Without this, every run would rewrite whole files just to flip line endings, producing huge
+# noisy diffs and defeating the append-only storage design.
+* text=auto eol=lf
+
+# These must keep CRLF to run reliably on Windows.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

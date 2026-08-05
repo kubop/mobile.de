@@ -1,3 +1,4 @@
+<meta charset="utf-8" />
 <title>mobile.de tracker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>%F0%9F%9A%97</text></svg>" />
@@ -497,6 +498,7 @@
 
   // --------------------------------------------------------------------- state
   let DATA = null;
+  let STATIC_MODE = false; // true when served as a static site with no live API behind it
   const state = { country: "", seller: "", condition: "", q: "", includeRemoved: "active", sort: "price_eur", dir: 1 };
 
   const histByListing = new Map();
@@ -755,9 +757,16 @@
   }
 
   // -------------------------------------------------------------------- drawer
+  /** Live server exposes per-listing detail; the static build bundles it into data.json. */
+  async function loadDetail(id) {
+    if (STATIC_MODE) return DATA.details?.[id] ?? null;
+    const r = await fetch(`api/listing/${id}`, { cache: "no-store" });
+    return r.ok ? r.json() : null;
+  }
+
   async function openDrawer(id) {
-    const r = await fetch(`/api/listing/${id}`).then((x) => x.json());
-    if (r.error) return;
+    const r = await loadDetail(id);
+    if (!r || r.error) return;
     const L = r.listing;
     const latest = r.snapshots[r.snapshots.length - 1] ?? {};
     $("#dTitle").textContent = L.title || L.short_title || id;
@@ -840,8 +849,33 @@
     render();
   };
 
+  /**
+   * Works two ways from the same file: against the local server's live API, or — when
+   * published as a static site (GitHub Pages) — against a pre-built data.json beside it.
+   */
+  async function fetchData() {
+    try {
+      const r = await fetch("api/data", { cache: "no-store" });
+      if (r.ok) return { data: await r.json(), live: true };
+    } catch {
+      /* fall through to the static snapshot */
+    }
+    const r = await fetch("data.json", { cache: "no-store" });
+    if (!r.ok) throw new Error(`no data source: api/data and data.json both unavailable (${r.status})`);
+    return { data: await r.json(), live: false };
+  }
+
   async function load() {
-    DATA = await fetch("/api/data").then((r) => r.json());
+    let live;
+    try {
+      ({ data: DATA, live } = await fetchData());
+    } catch (e) {
+      $("#banners").replaceChildren(
+        el("div", { class: "banner bad", html: `<b>Could not load data.</b> ${esc(e.message)}` }),
+      );
+      return;
+    }
+    STATIC_MODE = !live;
 
     histByListing.clear();
     for (const p of DATA.priceHistory) {
@@ -856,7 +890,10 @@
     const lr = DATA.overview.lastRun;
     $("#runline").textContent = lr
       ? `Last scrape ${ago(lr.started_at)} (${dt(lr.started_at)}) · ${DATA.overview.runCount} scrape(s) · ` +
-        `${DATA.overview.snapshotCount} snapshots · minimum ${DATA.minMinutesBetweenRuns} min between runs`
+        `${DATA.overview.snapshotCount} snapshots` +
+        (STATIC_MODE
+          ? ` · published snapshot from ${dt(DATA.generatedAt)}`
+          : ` · minimum ${DATA.minMinutesBetweenRuns} min between runs`)
       : "No successful scrape yet.";
 
     render();

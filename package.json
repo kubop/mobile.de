@@ -8,6 +8,9 @@
     "scrape": "node --experimental-sqlite --no-warnings src/scrape.js",
     "serve": "node --experimental-sqlite --no-warnings src/server.js",
     "stats": "node --experimental-sqlite --no-warnings src/stats.js",
+    "history:export": "node --experimental-sqlite --no-warnings src/history.js export",
+    "history:import": "node --experimental-sqlite --no-warnings src/history.js import",
+    "build": "node --experimental-sqlite --no-warnings src/build-site.js",
     "test": "node --experimental-sqlite --no-warnings --test test/*.test.js"
   },
   "dependencies": {

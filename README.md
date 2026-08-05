@@ -88,7 +88,76 @@ most recent attempt failed.
 
 ---
 
-## Scheduling
+## Running it on GitHub instead (free)
+
+This works, and it was verified rather than assumed. `.github/workflows/probe-cloud.yml` is a
+one-off feasibility probe that repeats the local matrix on a GitHub-hosted runner:
+
+| Test | On a GitHub runner (Azure IP, Cheyenne US) |
+|---|---|
+| plain `fetch` | 403 |
+| headless Chrome | 403 |
+| **real Chrome + CDP, under `xvfb`** | **200, listings parsed** ✅ |
+
+The runner's datacenter IP is *not* the deciding factor — the browser fingerprint is, exactly as
+on a home connection. `xvfb` supplies the virtual display that makes a "headed" browser possible
+on a runner. Re-run the probe any time from the Actions tab; it commits its findings to
+`probe-result.md`.
+
+### One-time setup
+
+1. Push the repo to GitHub.
+2. **Settings → Pages → Source: GitHub Actions.** Without this the publish job fails.
+3. Actions → *scrape and publish* → **Run workflow** to seed the first run.
+
+The dashboard then lives at `https://<user>.github.io/<repo>/`.
+
+Free-tier notes: Actions minutes are unlimited on public repos (2,000/month on private), and
+**Pages on a private repo requires a paid plan** — free + hosted dashboard means a public repo,
+which makes the scraped data public too.
+
+### How the pieces fit
+
+```
+cron (3x/day, UTC)
+  └─ import history/*.ndjson ──▶ SQLite
+       └─ scrape (xvfb + real Chrome)
+            ├─ export history/*.ndjson ──▶ commit to the repo
+            └─ build dist/ ─────────────▶ deploy to GitHub Pages
+```
+
+`history/` is the durable record, not `data/mobile.sqlite`. The SQLite file and the built
+`data.json` are both rewritten wholesale every run, so committing either would add a fresh
+~200 KB binary blob three times a day. The NDJSON files are append-mostly — a run adds ~32
+lines — so git deltas them almost perfectly (~19 MB/year of appended text, which packs down
+well). `snapshot.raw` is excluded from the export for the same reason; it is a local debugging
+convenience worth ~80 MB/year.
+
+`npm run history:import` rebuilds the database from the committed history, so a fresh clone
+reproduces the full dashboard, and `npm run build` produces the static site locally.
+
+The same `public/index.html` serves both modes: it tries the live API first and falls back to a
+bundled `data.json`, so the published page and the local one can never drift.
+
+### Things to keep an eye on
+
+- **Cron is best-effort.** GitHub delays scheduled runs when it's busy, sometimes by a lot. The
+  times are deliberately off the hour. UTC — `17 6/12/18 * * *` is 08:17/14:17/20:17 in Prague.
+- **Scheduled workflows get disabled after ~60 days of repository inactivity.** GitHub emails
+  you first. The bot's own history commits may not reset that timer, so if the scraper goes
+  quiet, check whether the schedule was disabled.
+- **A shrink guard protects the history.** If an export ever produces fewer lines than what's
+  committed (an empty database because an earlier step died, say), the workflow refuses to
+  commit and fails loudly rather than wiping your history.
+- **Publishing continues even when a scrape fails**, so the dashboard shows the last good data
+  with its "last attempt failed" banner instead of silently going stale.
+- **If mobile.de starts blocking Azure ranges**, the run fails loudly and nothing is corrupted.
+  Fall back to scraping locally (below) and pushing the history from your PC — the storage
+  format and dashboard are identical either way.
+
+---
+
+## Scheduling it locally instead
 
 The scraper needs an interactive desktop session, because the browser window is real.
 
@@ -196,7 +265,10 @@ directory — the schema holds one search per database.
 | `npm run scrape -- --debug` | Also dump fetched HTML to `debug/` for diagnosis. |
 | `npm run serve` | Dashboard. `PORT=9000 npm run serve` to change port. |
 | `npm run stats` | Terminal summary. |
-| `npm test` | Extractor + storage tests against captured fixtures. |
+| `npm run history:export` | SQLite → `history/*.ndjson` (the git-friendly record). |
+| `npm run history:import` | `history/*.ndjson` → SQLite. Destructive: rebuilds the database. |
+| `npm run build` | Build the static dashboard into `dist/`. |
+| `npm test` | Extractor, storage and history round-trip tests. |
 
 `MOBILEDE_DB=/path/to/copy.sqlite npm run serve` points the dashboard at a different database.
 

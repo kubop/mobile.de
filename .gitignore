@@ -9,3 +9,4 @@ probe-debug/
 # else's page content and includes dealer names, addresses and phone numbers. Tests that need
 # it skip when it is absent — see test/fixtures.js for how to capture your own.
 test/fixtures/*.html
+dist/
