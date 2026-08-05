@@ -116,6 +116,16 @@ Free-tier notes: Actions minutes are unlimited on public repos (2,000/month on p
 **Pages on a private repo requires a paid plan** — free + hosted dashboard means a public repo,
 which makes the scraped data public too.
 
+### Republishing without scraping
+
+**Actions → *publish dashboard* → Run workflow.** It rebuilds the database from the committed
+history, builds `dist/` and deploys — no request to mobile.de, and no write access to the repo.
+Use it to publish a dashboard change or bring Pages up to date with the latest commit.
+
+It also runs automatically when you push a change to `public/index.html` or the build/query
+code. It deliberately ignores `history/` changes, because the scrape workflow already publishes
+after it commits and two simultaneous deployments would race.
+
 ### How the pieces fit
 
 ```
