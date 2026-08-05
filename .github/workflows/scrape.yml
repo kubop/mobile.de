@@ -21,6 +21,13 @@ on:
         description: "Ignore the minimum-interval guard"
         type: boolean
         default: false
+  # Smoke-test the pipeline whenever the pipeline itself changes. Self-limiting: only this
+  # file. The minimum-interval guard means such a run usually skips the network entirely and
+  # just exercises the import -> export -> build -> publish plumbing.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/scrape.yml"
 
 permissions:
   contents: write # commit the new history
