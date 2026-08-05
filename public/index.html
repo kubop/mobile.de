@@ -134,6 +134,23 @@
   .fav.on { color: var(--warning); }
   .fav:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
 
+  /* Drawer: photo + favourite toggle. */
+  .dphoto {
+    display: block; width: 100%; max-width: 360px; aspect-ratio: 4 / 3;
+    object-fit: cover; border-radius: 8px; background: var(--plane);
+    border: 1px solid var(--border); margin: 0 0 14px;
+  }
+  .favbtn {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    background: none; color: var(--text-secondary); font: inherit; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px;
+  }
+  .favbtn:hover { background: var(--plane); color: var(--text-primary); }
+  .favbtn.on { color: var(--text-primary); border-color: var(--warning); }
+  .favbtn.on .g { color: var(--warning); }
+  .favbtn .g { font-size: 15px; line-height: 1; }
+  .favbtn:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
   svg { display: block; width: 100%; overflow: visible; }
   svg text { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
   .gridline { stroke: var(--grid); stroke-width: 1; }
@@ -783,6 +800,77 @@
     });
   }
 
+  /**
+   * A labelled favourite toggle for the drawer, which shows the state as well as changing it.
+   * It repaints itself because toggleFav re-renders the table and chart but not the open drawer.
+   */
+  function favToggle(id) {
+    const btn = el("button", { type: "button" });
+    const glyph = el("span", { class: "g" });
+    const label = el("span");
+    btn.append(glyph, label);
+    const paint = () => {
+      const on = isFav(id);
+      btn.className = "favbtn" + (on ? " on" : "");
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+      btn.title = on ? "Remove from favourites" : "Add to favourites";
+      glyph.textContent = on ? "★" : "☆";
+      label.textContent = on ? "Favourite" : "Not a favourite";
+    };
+    btn.onclick = () => {
+      toggleFav(id);
+      paint();
+    };
+    paint();
+    return btn;
+  }
+
+  /**
+   * mobile.de stores only the 160px-wide thumbnail URL, which is too small for the drawer. Its
+   * own srcSet advertises exactly these widths, and nothing else: a plausible-looking mo-720w
+   * returns 404, so the list is fixed rather than derived from a guess. The browser picks the
+   * right one for the display size and pixel density.
+   */
+  const IMAGE_WIDTHS = [160, 240, 360, 1024];
+
+  function photoSources(url) {
+    if (!url) return null;
+    const m = url.match(/^(.*[?&]rule=)mo-\d+w(.*)$/);
+    if (!m) return { src: url, srcset: null }; // unexpected shape — use it verbatim
+    const at = (w) => `${m[1]}mo-${w}w${m[2]}`;
+    return { src: at(360), srcset: IMAGE_WIDTHS.map((w) => `${at(w)} ${w}w`).join(", ") };
+  }
+
+  /**
+   * Hotlinks mobile.de's CDN, the same request a browser makes when rendering their page. If it
+   * ever fails — hotlink blocking, a retired image, an offline dashboard — fall back to the
+   * stored thumbnail once, then remove the element rather than leaving a broken-image icon.
+   */
+  function photoEl(L) {
+    const srcs = photoSources(L.image);
+    if (!srcs) return null;
+    const img = el("img", {
+      class: "dphoto",
+      src: srcs.src,
+      alt: `Photo of ${L.short_title || L.title || "the listing"}`,
+      loading: "lazy",
+      decoding: "async",
+      referrerpolicy: "no-referrer",
+      sizes: "(max-width: 620px) 90vw, 360px",
+      ...(srcs.srcset ? { srcset: srcs.srcset } : {}),
+    });
+    img.addEventListener("error", () => {
+      if (img.dataset.fallback || !L.image || img.src === L.image) {
+        img.remove();
+        return;
+      }
+      img.dataset.fallback = "1";
+      img.removeAttribute("srcset");
+      img.src = L.image;
+    });
+    return img;
+  }
+
   /** Star outline path, used for both the chart marks and the legend swatch. */
   function starPath(cx, cy, outer, inner = outer * 0.44, points = 5) {
     const p = [];
@@ -1118,8 +1206,11 @@
       ` — <a href="${esc(L.url)}" target="_blank" rel="noopener">open on mobile.de ↗</a>`;
 
     const chart = el("div");
+    const photo = photoEl(L);
     const body = el("div", {}, [
-      el("h2", { style: "font-size:13px;margin:0 0 8px", text: "Price history" }),
+      ...(photo ? [photo] : []),
+      favToggle(id),
+      el("h2", { style: "font-size:13px;margin:18px 0 8px", text: "Price history" }),
       chart,
       el("h2", { style: "font-size:13px;margin:18px 0 8px", text: "Current details" }),
       el("dl", { class: "kv" }, [

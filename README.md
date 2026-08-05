@@ -230,13 +230,20 @@ stored as `NULL` and shown as `—`.
 - **Price vs mileage** scatter, split into used and delivery-mileage cars.
 - **Activity feed** — new/removed/relisted plus every field change.
 - **Full table** — sortable, with an inline price sparkline per row; click any row for a
-  drawer with the full price history and spec sheet. **Columns** hides any column you don't
-  want; the choice persists in `localStorage` per browser.
+  drawer with the photo, a favourite toggle, the full price history and the spec sheet.
+  **Columns** hides any column you don't want; the choice persists in `localStorage` per browser.
 
 Filters at the top scope every chart, the feed and the table together. Light and dark themes
 are both explicitly styled; the chart palette is validated for colour-vision deficiency.
 
-**Favourites.** The ★ column marks cars you care about. Sort by it to bring them to the top,
+**Photos** are hotlinked from mobile.de's CDN rather than copied into the repo — the same request
+a browser makes when rendering their page, sent without a referrer. Only the four widths their
+own `srcSet` advertises are used (160/240/360/1024); a plausible-looking `mo-720w` returns 404,
+so the list is fixed rather than guessed. If an image ever fails to load the element is removed
+instead of leaving a broken-image icon.
+
+**Favourites.** The ★ column marks cars you care about, and the drawer has a labelled toggle
+that states the current state. Sort by it to bring them to the top,
 and they appear in the price-vs-mileage chart as stars rather than dots. That uses shape rather
 than a third colour deliberately: hue already encodes condition, so a coloured outline would
 compete with it and disappear in greyscale or for a red-blind viewer, whereas the shape reads
