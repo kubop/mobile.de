@@ -5,7 +5,7 @@
   "maxPages": 8,
 
   "politeness": {
-    "minMinutesBetweenRuns": 180,
+    "minMinutesBetweenRuns": 60,
     "pageDelayMs": [7000, 14000],
     "settleMs": [4000, 6500],
     "navTimeoutMs": 60000,

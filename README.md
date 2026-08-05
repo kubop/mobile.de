@@ -138,9 +138,9 @@ cron (3x/day, UTC)
 
 `history/` is the durable record, not `data/mobile.sqlite`. The SQLite file and the built
 `data.json` are both rewritten wholesale every run, so committing either would add a fresh
-~200 KB binary blob three times a day. The NDJSON files are append-mostly — a run adds ~32
-lines — so git deltas them almost perfectly (~19 MB/year of appended text, which packs down
-well). `snapshot.raw` is excluded from the export for the same reason; it is a local debugging
+~200 KB binary blob every run. The NDJSON files are append-mostly — a run adds ~32 lines — so
+git deltas them almost perfectly (~80 MB/year of appended text at the current 2-hourly cadence,
+which packs down well). `snapshot.raw` is excluded from the export for the same reason; it is a local debugging
 convenience worth ~80 MB/year.
 
 `npm run history:import` rebuilds the database from the committed history, so a fresh clone
@@ -151,8 +151,12 @@ bundled `data.json`, so the published page and the local one can never drift.
 
 ### Things to keep an eye on
 
-- **Cron is best-effort.** GitHub delays scheduled runs when it's busy, sometimes by a lot. The
-  times are deliberately off the hour. UTC — `17 6/12/18 * * *` is 08:17/14:17/20:17 in Prague.
+- **Cron is best-effort.** GitHub delays scheduled runs when it's busy, sometimes by a lot, which
+  is why the slot is :17 rather than on the hour. `17 */2 * * *` is every 2 hours UTC — even hours
+  UTC, odd hours in Prague during summer time.
+- **`minMinutesBetweenRuns` must stay well under the cron interval**, or runs are silently
+  skipped. At a 120-minute cadence the guard is 60, so a run is only dropped when the previous
+  one landed more than an hour late.
 - **Scheduled workflows get disabled after ~60 days of repository inactivity.** GitHub emails
   you first. The bot's own history commits may not reset that timer, so if the scraper goes
   quiet, check whether the schedule was disabled.

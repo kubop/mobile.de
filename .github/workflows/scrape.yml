@@ -10,11 +10,10 @@ name: scrape and publish
 
 on:
   schedule:
-    # UTC. Three times a day, deliberately off the hour — scheduled runs are best-effort and
-    # GitHub delays them when the hour is busy.
-    - cron: "17 6 * * *"
-    - cron: "17 12 * * *"
-    - cron: "17 18 * * *"
+    # Every 2 hours, at :17 rather than on the hour — scheduled runs are best-effort and GitHub
+    # delays them most when the top of the hour is busy. 12 runs a day, 2 page fetches each.
+    # config.json's minMinutesBetweenRuns must stay well under 120 or this silently skips runs.
+    - cron: "17 */2 * * *"
   workflow_dispatch:
     inputs:
       force:
