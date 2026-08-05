@@ -143,7 +143,27 @@
   .up { color: var(--critical); font-weight: 600; }
 
   /* Table view — the WCAG-clean twin of every chart above. */
-  .tablewrap { overflow-x: auto; margin-top: 16px; }
+  .tabletop { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  /* The scroll container is separate from the header so the column popover isn't clipped. */
+  .tablewrap { overflow-x: auto; margin-top: 12px; }
+
+  .colpicker { position: relative; margin-left: auto; }
+  .colpanel {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); padding: 8px;
+    min-width: 215px; max-height: 60vh; overflow-y: auto;
+  }
+  .colpanel label {
+    display: flex; gap: 9px; align-items: center; padding: 5px 7px;
+    border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .colpanel label:hover { background: var(--plane); }
+  .colpanel label.locked { opacity: 0.5; cursor: not-allowed; }
+  .colpanel .pactions {
+    display: flex; gap: 8px; margin-top: 7px; padding-top: 8px; border-top: 1px solid var(--border);
+  }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   th, td { padding: 8px 10px; text-align: left; white-space: nowrap; }
   th {
@@ -228,12 +248,22 @@
     </div>
   </div>
 
-  <div class="card tablewrap" style="margin-top: 16px">
-    <h2 style="margin-bottom: 8px">All listings <span class="sub" id="tableCount"></span></h2>
-    <table>
-      <thead id="thead"></thead>
-      <tbody id="tbody"></tbody>
-    </table>
+  <div class="card" id="tableCard" style="margin-top: 16px">
+    <div class="tabletop">
+      <h2>All listings <span class="sub" id="tableCount"></span></h2>
+      <div class="colpicker" id="colpicker">
+        <button class="ghost" id="colBtn" aria-expanded="false" aria-controls="colPanel">
+          Columns <span id="colCount"></span>
+        </button>
+        <div class="colpanel" id="colPanel" hidden></div>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -638,9 +668,104 @@
     { k: "removed_at", label: "Status", fmt: (r) => (r.removed_at ? `removed ${dshort(r.removed_at)}` : "live") },
   ];
 
+  // --------------------------------------------------------------- column visibility
+  const HIDDEN_KEY = "mobilede.hiddenCols";
+
+  /**
+   * Persist the HIDDEN set, not the visible one: a column added in a later version then shows
+   * up by default rather than staying silently switched off for anyone with saved settings.
+   */
+  function loadHidden() {
+    try {
+      const v = JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "[]");
+      // Ignore keys that no longer exist, so a renamed column can't wedge the setting.
+      return new Set(Array.isArray(v) ? v.filter((k) => COLS.some((c) => c.k === k)) : []);
+    } catch {
+      return new Set();
+    }
+  }
+  let hiddenCols = loadHidden();
+
+  const visibleCols = () => COLS.filter((c) => !hiddenCols.has(c.k));
+
+  function saveHidden() {
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCols]));
+    } catch {
+      /* private mode / storage full — the setting just won't persist */
+    }
+  }
+
+  function renderColPicker() {
+    const vis = visibleCols();
+    $("#colCount").textContent = `${vis.length}/${COLS.length}`;
+
+    const rows = COLS.map((c) => {
+      const shown = !hiddenCols.has(c.k);
+      // Never let the last visible column be hidden — an empty table has no way back.
+      const locked = shown && vis.length === 1;
+      const box = el("input", {
+        type: "checkbox",
+        ...(shown ? { checked: "" } : {}),
+        ...(locked ? { disabled: "" } : {}),
+        onchange: (e) => {
+          if (e.target.checked) hiddenCols.delete(c.k);
+          else hiddenCols.add(c.k);
+          saveHidden();
+          render();
+          // renderColPicker only replaces the panel's children, so it stays open for further
+          // edits; this just guarantees that if the panel element is ever recreated.
+          openPanel();
+        },
+      });
+      return el("label", { class: locked ? "locked" : null, title: locked ? "At least one column must stay visible" : null }, [
+        box,
+        c.label,
+      ]);
+    });
+
+    $("#colPanel").replaceChildren(
+      ...rows,
+      el("div", { class: "pactions" }, [
+        el("button", {
+          class: "ghost",
+          text: "Show all",
+          onclick: () => {
+            hiddenCols.clear();
+            saveHidden();
+            render();
+            openPanel();
+          },
+        }),
+        el("button", {
+          class: "ghost",
+          text: "Close",
+          onclick: closePanel,
+        }),
+      ]),
+    );
+  }
+
+  const panelOpen = () => !$("#colPanel").hidden;
+  function openPanel() {
+    $("#colPanel").hidden = false;
+    $("#colBtn").setAttribute("aria-expanded", "true");
+  }
+  function closePanel() {
+    $("#colPanel").hidden = true;
+    $("#colBtn").setAttribute("aria-expanded", "false");
+  }
+
+  // Bound once on the document; the picker's own contents are replaced on every render.
+  document.addEventListener("click", (e) => {
+    if (panelOpen() && !$("#colpicker").contains(e.target)) closePanel();
+  });
+  addEventListener("keydown", (e) => e.key === "Escape" && panelOpen() && closePanel());
+
   function renderTable(rows) {
+    const cols = visibleCols();
     $("#thead").replaceChildren(
-      el("tr", {}, COLS.map((c) =>
+      el("tr", {}, cols.map((c) =>
         el("th", {
           class: c.num ? "num" : null,
           onclick: c.sortable === false ? null : () => {
@@ -664,7 +789,7 @@
     $("#tbody").replaceChildren(
       ...sorted.map((r) =>
         el("tr", { class: r.removed_at ? "gone" : null, onclick: () => openDrawer(r.id) },
-          COLS.map((c) => {
+          cols.map((c) => {
             const v = c.fmt(r);
             return el("td", { class: [c.num ? "num" : "", c.cls ?? ""].join(" ").trim() || null }, typeof v === "string" ? [v] : [v]);
           }),
@@ -753,6 +878,7 @@
     );
     scatterChart($("#chartScatter"), rows, openDrawer);
     renderFeed(visibleIds);
+    renderColPicker();
     renderTable(rows);
   }
 
@@ -840,6 +966,8 @@
     if (t) document.documentElement.setAttribute("data-theme", t);
     else document.documentElement.removeAttribute("data-theme");
   };
+  $("#colBtn").onclick = () => (panelOpen() ? closePanel() : openPanel());
+
   applyTheme(localStorage.getItem("theme"));
   $("#themeBtn").onclick = () => {
     const cur = document.documentElement.getAttribute("data-theme");

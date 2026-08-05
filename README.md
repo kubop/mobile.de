@@ -220,7 +220,8 @@ stored as `NULL` and shown as `—`.
 - **Price vs mileage** scatter, split into used and delivery-mileage cars.
 - **Activity feed** — new/removed/relisted plus every field change.
 - **Full table** — sortable, with an inline price sparkline per row; click any row for a
-  drawer with the full price history and spec sheet.
+  drawer with the full price history and spec sheet. **Columns** hides any column you don't
+  want; the choice persists in `localStorage` per browser.
 
 Filters at the top scope every chart, the feed and the table together. Light and dark themes
 are both explicitly styled; the chart palette is validated for colour-vision deficiency.
