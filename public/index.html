@@ -120,6 +120,19 @@
 
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
   .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: 1px; }
+  /* Outlined, so the swatch reads as "this shape" rather than "this colour" — favourite marks
+     keep the fill of their condition. */
+  .legend svg.swatch { width: 13px; height: 13px; display: inline-block; margin-right: 4px; vertical-align: -2px; overflow: visible; }
+
+  /* Favourite toggle. A real <button> so it is keyboard reachable and announces its state. */
+  .favcell { width: 30px; padding-right: 0 !important; }
+  .fav {
+    background: none; border: 0; padding: 2px 3px; line-height: 1; cursor: pointer;
+    font-size: 15px; color: var(--muted); border-radius: 5px;
+  }
+  .fav:hover { background: var(--plane); color: var(--text-primary); }
+  .fav.on { color: var(--warning); }
+  .fav:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
 
   svg { display: block; width: 100%; overflow: visible; }
   svg text { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
@@ -472,21 +485,33 @@
 
     const svg = s("svg", { viewBox: `0 0 ${w} ${h}`, role: "img", "aria-label": "Price versus mileage" }, g);
 
+    // Favourites are drawn in a second pass so they always sit on top. Cars at 0 km overplot
+    // heavily, and a starred one buried under later circles would defeat the point of marking
+    // it. Their hit targets go last too, so hover precedence matches what you see.
+    const marks = [[], []], hits = [[], []];
+
     for (const p of pts) {
+      const fav = isFav(p.id);
+      const layer = fav ? 1 : 0;
       const used = (p.mileage_km ?? 0) > 1000;
       const color = used ? "var(--series-1)" : "var(--series-2)";
-      // 2px surface ring so overlapping dots stay separable — not a hairline border.
-      const dot = s("circle", {
-        cx: X(p.mileage_km), cy: Y(p.price_eur), r: 5,
-        fill: color, stroke: "var(--surface-1)", "stroke-width": 2,
-        opacity: p.removed_at ? 0.4 : 1,
-      });
+      const cx = X(p.mileage_km), cy = Y(p.price_eur);
+      // Colour is already carrying condition, so favourites are encoded by SHAPE instead of a
+      // third hue: readable independently of colour, survives greyscale and colour-vision
+      // deficiency, and matches the ★ in the table.
+      // 2px surface ring so overlapping marks stay separable — not a hairline border.
+      const common = { fill: color, stroke: "var(--surface-1)", "stroke-width": 2, opacity: p.removed_at ? 0.4 : 1 };
+      marks[layer].push(
+        fav
+          ? s("path", { d: starPath(cx, cy, 9), ...common, "stroke-width": 1.5 })
+          : s("circle", { cx, cy, r: 5, ...common }),
+      );
       // Hit target is larger than the mark.
-      const hit = s("circle", { class: "hit", cx: X(p.mileage_km), cy: Y(p.price_eur), r: 13, style: "cursor:pointer" });
+      const hit = s("circle", { class: "hit", cx, cy, r: 13, style: "cursor:pointer" });
       hit.addEventListener("mousemove", (e) =>
         showTip(
           e,
-          `<b>${eur(p.price_eur)}</b> · ${km(p.mileage_km)}<br>` +
+          `<b>${eur(p.price_eur)}</b> · ${km(p.mileage_km)}${fav ? " · ★" : ""}<br>` +
             `<span class="r">${esc(p.sub_title || p.title || "")}</span><br>` +
             `<span class="r">${esc(p.seller_name || "")} · ${esc(p.country || "")}` +
             `${p.first_reg_ym ? " · first reg " + p.first_reg_ym : ""}` +
@@ -495,14 +520,28 @@
       );
       hit.addEventListener("mouseleave", hideTip);
       hit.addEventListener("click", () => onPick(p.id));
-      svg.append(dot, hit);
+      hits[layer].push(hit);
     }
+    svg.append(...marks[0], ...marks[1], ...hits[0], ...hits[1]);
     host.replaceChildren(svg);
 
-    $("#scatterLegend").replaceChildren(
+    const legend = [
       el("span", { html: `<i style="background:var(--series-1)"></i>Used (&gt;1,000 km)` }),
       el("span", { html: `<i style="background:var(--series-2)"></i>New / delivery mileage` }),
-    );
+    ];
+    // Only mention favourites when some are actually plotted, and draw the swatch outlined so
+    // it reads as a shape rather than implying a third colour category.
+    if (pts.some((p) => isFav(p.id))) {
+      legend.push(
+        el("span", {
+          html:
+            `<svg class="swatch" viewBox="-9 -9 18 18" aria-hidden="true">` +
+            `<path d="${starPath(0, 0, 8)}" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>` +
+            `Favourite (either colour)`,
+        }),
+      );
+    }
+    $("#scatterLegend").replaceChildren(...legend);
   }
 
   /** Inline price sparkline for a table row. */
@@ -686,7 +725,69 @@
     );
   }
 
+  // ------------------------------------------------------------------------- favourites
+  const FAV_KEY = "mobilede.favorites";
+
+  /**
+   * Unlike the view settings, stored ids are NOT reconciled against the current data. A
+   * favourited car can legitimately be absent — removed from the search, or the database
+   * rebuilt from history — and may well come back. Pruning would quietly destroy your picks,
+   * so only the shape of each entry is checked.
+   */
+  function loadFavs() {
+    try {
+      const v = JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]");
+      if (!Array.isArray(v)) return new Set();
+      return new Set(v.filter((x) => typeof x === "string" || typeof x === "number").map(String));
+    } catch {
+      return new Set();
+    }
+  }
+  let favs = loadFavs();
+  const isFav = (id) => favs.has(String(id));
+
+  function toggleFav(id) {
+    const k = String(id);
+    if (!favs.delete(k)) favs.add(k);
+    try {
+      localStorage.setItem(FAV_KEY, JSON.stringify([...favs]));
+    } catch {
+      /* private mode / storage full — the choice just won't persist */
+    }
+    render();
+  }
+
+  function favButton(r) {
+    const on = isFav(r.id);
+    return el("button", {
+      type: "button",
+      class: "fav" + (on ? " on" : ""),
+      text: on ? "★" : "☆",
+      title: on ? "Remove from favourites" : "Add to favourites",
+      "aria-pressed": on ? "true" : "false",
+      "aria-label": `${on ? "Remove" : "Add"} favourite: ${r.sub_title || r.title || r.id}`,
+      // Without this the row's own handler would also fire and open the drawer.
+      onclick: (e) => {
+        e.stopPropagation();
+        toggleFav(r.id);
+      },
+    });
+  }
+
+  /** Star outline path, used for both the chart marks and the legend swatch. */
+  function starPath(cx, cy, outer, inner = outer * 0.44, points = 5) {
+    const p = [];
+    for (let i = 0; i < points * 2; i++) {
+      const rad = i % 2 ? inner : outer;
+      const a = (Math.PI / points) * i - Math.PI / 2;
+      p.push(`${(cx + rad * Math.cos(a)).toFixed(2)},${(cy + rad * Math.sin(a)).toFixed(2)}`);
+    }
+    return `M${p.join("L")}Z`;
+  }
+
   const COLS = [
+    // Ascending puts favourites first, which is the ordering people actually want.
+    { k: "_fav", label: "★", cls: "favcell", sortVal: (r) => (isFav(r.id) ? 0 : 1), fmt: favButton },
     { k: "id", label: "ID", fmt: (r) => r.id },
     { k: "sub_title", label: "Trim", cls: "name", fmt: (r) => r.sub_title || r.title || "—" },
     { k: "price_eur", label: "Price", num: true, fmt: (r) => eur(r.price_eur) },
@@ -881,8 +982,12 @@
       )),
     );
 
+    // Most columns sort on the row field of the same name; computed ones (favourite) supply
+    // their own accessor.
+    const sortCol = COLS.find((c) => c.k === state.sort);
+    const val = sortCol?.sortVal ?? ((r) => r[state.sort]);
     const sorted = [...rows].sort((a, b) => {
-      const va = a[state.sort], vb = b[state.sort];
+      const va = val(a), vb = val(b);
       if (va == null && vb == null) return 0;
       if (va == null) return 1;   // nulls always last, regardless of direction
       if (vb == null) return -1;

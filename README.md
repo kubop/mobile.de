@@ -236,14 +236,24 @@ stored as `NULL` and shown as `—`.
 Filters at the top scope every chart, the feed and the table together. Light and dark themes
 are both explicitly styled; the chart palette is validated for colour-vision deficiency.
 
-Your view is remembered per browser in `localStorage` — the filters, the sort column and
-direction (`mobilede.view`) and the hidden columns (`mobilede.hiddenCols`). **Reset view**
+**Favourites.** The ★ column marks cars you care about. Sort by it to bring them to the top,
+and they appear in the price-vs-mileage chart as stars rather than dots. That uses shape rather
+than a third colour deliberately: hue already encodes condition, so a coloured outline would
+compete with it and disappear in greyscale or for a red-blind viewer, whereas the shape reads
+independently of colour. Favourites are drawn last so a starred car can't hide under the 0 km
+cluster.
+
+Your view is remembered per browser in `localStorage` — the favourites (`mobilede.favorites`),
+the filters, the sort column and direction (`mobilede.view`) and the hidden columns
+(`mobilede.hiddenCols`). **Reset view**
 appears in the filter row whenever anything is non-default and clears filters and sorting;
 hidden columns are a separate preference, restored with **Show all** in the Columns popover.
 
 Stored values are validated on load, so a stale one can never leave the dashboard in a state
 with no visible cause. A filter naming a seller or country that is no longer in the data is
-dropped with a banner explaining why, rather than silently showing an empty table.
+dropped with a banner explaining why, rather than silently showing an empty table. Favourites
+are the exception and are never pruned: a favourited car can legitimately vanish from the search
+and come back later, so discarding the id would destroy your own data.
 
 Trend charts need two scrapes before they show a line, and say so until then.
 
