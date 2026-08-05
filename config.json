@@ -1,0 +1,26 @@
+{
+  "searchUrl": "https://suchen.mobile.de/fahrzeuge/search.html?lang=en&isSearchRequest=true&s=Car&vc=Car&ms=137%3B18%3B%3Bspider&od=down&sb=doc&ref=dsp",
+  "label": "McLaren 750S Spider",
+
+  "maxPages": 8,
+
+  "politeness": {
+    "minMinutesBetweenRuns": 180,
+    "pageDelayMs": [7000, 14000],
+    "settleMs": [4000, 6500],
+    "navTimeoutMs": 60000,
+    "maxAttemptsPerPage": 2,
+    "blockedBackoffMs": 45000
+  },
+
+  "browser": {
+    "executablePath": null,
+    "cdpPort": 9333,
+    "offscreen": true,
+    "keepProfile": true
+  },
+
+  "server": {
+    "port": 8477
+  }
+}

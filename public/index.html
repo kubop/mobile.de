@@ -1,0 +1,866 @@
+<title>mobile.de tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>%F0%9F%9A%97</text></svg>" />
+<style>
+  /* Palette roles — validated categorical slots 1 (blue) and 2 (orange); see README. */
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.1);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --good: #006300;
+    --critical: #d03b3b;
+    --warning: #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255, 255, 255, 0.1);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --good: #0ca30c;
+      --critical: #d03b3b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --good: #0ca30c;
+    --critical: #d03b3b;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--plane);
+    color: var(--text-primary);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  a { color: var(--series-1); }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 24px 20px 80px; }
+
+  header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  .sub { color: var(--text-secondary); font-size: 13px; }
+  .spacer { flex: 1; }
+  button.ghost {
+    background: transparent; border: 1px solid var(--border); color: var(--text-secondary);
+    border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button.ghost:hover { background: var(--surface-1); }
+
+  .banner {
+    margin: 14px 0; padding: 10px 14px; border-radius: 10px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .banner.warn { border-left: 3px solid var(--warning); }
+  .banner.bad { border-left: 3px solid var(--critical); }
+
+  /* One filter row above everything it scopes. */
+  .filters {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    margin: 18px 0; padding: 12px 14px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .filters label { font-size: 12px; color: var(--text-secondary); display: flex; gap: 6px; align-items: center; }
+  select, input[type="search"] {
+    font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--plane); color: var(--text-primary);
+  }
+  input[type="search"] { min-width: 200px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+  }
+  .tile .k { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  /* Proportional figures on stat values — never tabular-nums at display size. */
+  .tile .v { font-size: 26px; font-weight: 620; margin-top: 4px; line-height: 1.15; }
+  .tile .n { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* 520px keeps this at two columns on a normal desktop, so each 640-unit plot has room.
+     align-items:start stops a short chart card from stretching to a tall neighbour's height. */
+  .grid2 {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+    gap: 16px; margin-top: 16px; align-items: start;
+  }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 2px; font-weight: 620; }
+  .card .cap { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+  .empty {
+    color: var(--muted); font-size: 13px; padding: 28px 0; text-align: center;
+  }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: 1px; }
+
+  svg { display: block; width: 100%; overflow: visible; }
+  svg text { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .axisline { stroke: var(--baseline); stroke-width: 1; }
+  .hit { fill: transparent; }
+
+  /* Feed */
+  .feed { max-height: 420px; overflow-y: auto; margin: -4px -6px 0; padding: 0 6px; }
+  .fitem { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .fitem:last-child { border-bottom: 0; }
+  .pill {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px;
+    border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary);
+    height: fit-content; white-space: nowrap;
+  }
+  .pill.new { color: var(--good); border-color: var(--good); }
+  .pill.removed { color: var(--critical); border-color: var(--critical); }
+  .fitem .when { color: var(--muted); font-size: 11px; white-space: nowrap; margin-left: auto; }
+  .down { color: var(--good); font-weight: 600; }
+  .up { color: var(--critical); font-weight: 600; }
+
+  /* Table view — the WCAG-clean twin of every chart above. */
+  .tablewrap { overflow-x: auto; margin-top: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    border-bottom: 1px solid var(--baseline); cursor: pointer; user-select: none;
+    position: sticky; top: 0; background: var(--surface-1); z-index: 1;
+  }
+  th:hover { color: var(--text-primary); }
+  th .arrow { opacity: 0.55; }
+  td { border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--plane); }
+  tr.gone td { opacity: 0.5; }
+  tr.gone td:first-child { text-decoration: line-through; }
+  .num { text-align: right; }
+  .name { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Tooltip + detail drawer */
+  #tip {
+    position: fixed; pointer-events: none; z-index: 50; opacity: 0; transition: opacity 0.1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px;
+    padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+    max-width: 280px;
+  }
+  #tip b { font-weight: 620; }
+  #tip .r { color: var(--text-secondary); }
+  #drawer {
+    position: fixed; inset: 0 0 0 auto; width: min(560px, 100%); background: var(--surface-1);
+    border-left: 1px solid var(--border); box-shadow: -8px 0 30px rgba(0, 0, 0, 0.18);
+    transform: translateX(100%); transition: transform 0.18s ease; z-index: 60;
+    display: flex; flex-direction: column;
+  }
+  #drawer.open { transform: none; }
+  #drawer .dh { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
+  #drawer .db { padding: 16px 20px; overflow-y: auto; }
+  #drawer h3 { margin: 0 0 2px; font-size: 15px; }
+  dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: 13px; }
+  dl.kv dt { color: var(--text-secondary); }
+  dl.kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.28); z-index: 55; opacity: 0; pointer-events: none; transition: opacity 0.18s; }
+  .backdrop.on { opacity: 1; pointer-events: auto; }
+  .sparkcell { width: 90px; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1 id="title">mobile.de tracker</h1>
+    <span class="sub" id="subtitle"></span>
+    <span class="spacer"></span>
+    <button class="ghost" id="themeBtn">theme</button>
+    <button class="ghost" id="reloadBtn">reload</button>
+  </header>
+  <div class="sub" id="runline"></div>
+
+  <div id="banners"></div>
+
+  <div class="filters" id="filters"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Median asking price</h2>
+      <div class="cap">Across all listings present at each scrape.</div>
+      <div id="chartMedian"></div>
+    </div>
+    <div class="card">
+      <h2>Listings on the market</h2>
+      <div class="cap">How many ads matched the search at each scrape.</div>
+      <div id="chartCount"></div>
+    </div>
+    <div class="card">
+      <h2>Price vs mileage</h2>
+      <div class="cap">Each dot is one car. Hover for details; click to open.</div>
+      <div class="legend" id="scatterLegend"></div>
+      <div id="chartScatter"></div>
+    </div>
+    <div class="card">
+      <h2>Activity</h2>
+      <div class="cap">New and removed ads, plus price and spec edits.</div>
+      <div class="feed" id="feed"></div>
+    </div>
+  </div>
+
+  <div class="card tablewrap" style="margin-top: 16px">
+    <h2 style="margin-bottom: 8px">All listings <span class="sub" id="tableCount"></span></h2>
+    <table>
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="tip"></div>
+<div class="backdrop" id="backdrop"></div>
+<aside id="drawer">
+  <div class="dh">
+    <div style="flex: 1">
+      <h3 id="dTitle"></h3>
+      <div class="sub" id="dSub"></div>
+    </div>
+    <button class="ghost" id="dClose">close</button>
+  </div>
+  <div class="db" id="dBody"></div>
+</aside>
+
+<script type="module">
+  // ---------------------------------------------------------------- utilities
+  const $ = (s) => document.querySelector(s);
+  const el = (t, a = {}, kids = []) => {
+    const n = document.createElement(t);
+    for (const [k, v] of Object.entries(a)) {
+      if (k === "class") n.className = v;
+      else if (k === "html") n.innerHTML = v;
+      else if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else if (v != null) n.setAttribute(k, v);
+    }
+    for (const c of [].concat(kids)) if (c != null) n.append(c);
+    return n;
+  };
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const s = (t, a = {}, kids = []) => {
+    const n = document.createElementNS(SVGNS, t);
+    for (const [k, v] of Object.entries(a)) if (v != null) n.setAttribute(k, v);
+    for (const c of [].concat(kids)) if (c != null) n.append(c);
+    return n;
+  };
+
+  const eur = (v) => (v == null ? "—" : "€" + Math.round(v).toLocaleString("en-US"));
+  const eurShort = (v) =>
+    v == null ? "—" : v >= 1000 ? "€" + Math.round(v / 1000) + "k" : "€" + v;
+  const km = (v) => (v == null ? "—" : v.toLocaleString("en-US") + " km");
+  const int = (v) => (v == null ? "—" : v.toLocaleString("en-US"));
+  const dt = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—");
+  const dshort = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "");
+  const ago = (iso) => {
+    if (!iso) return "—";
+    const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+    return `${Math.round(mins / 1440)}d ago`;
+  };
+  const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /** Human-friendly axis ticks covering [min,max]. */
+  function niceTicks(min, max, count = 5) {
+    if (!(isFinite(min) && isFinite(max))) return { ticks: [0, 1], lo: 0, hi: 1 };
+    if (min === max) {
+      const pad = Math.abs(min) * 0.1 || 1;
+      min -= pad; max += pad;
+    }
+    const raw = (max - min) / count;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((v) => v >= raw) ?? 10 * mag;
+    const lo = Math.floor(min / step) * step;
+    const hi = Math.ceil(max / step) * step;
+    const ticks = [];
+    for (let v = lo; v <= hi + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
+    return { ticks, lo, hi };
+  }
+
+  // ------------------------------------------------------------- tooltip layer
+  const tip = $("#tip");
+  function showTip(evt, html) {
+    tip.innerHTML = html;
+    tip.style.opacity = "1";
+    const pad = 14;
+    const r = tip.getBoundingClientRect();
+    let x = evt.clientX + pad;
+    let y = evt.clientY + pad;
+    if (x + r.width > innerWidth - 8) x = evt.clientX - r.width - pad;
+    if (y + r.height > innerHeight - 8) y = evt.clientY - r.height - pad;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  const hideTip = () => (tip.style.opacity = "0");
+
+  // ------------------------------------------------------------------- charts
+  const PLOT = { w: 640, h: 240, l: 54, r: 14, t: 12, b: 30 };
+
+  function emptyNote(host, msg) {
+    host.replaceChildren(el("div", { class: "empty", text: msg }));
+  }
+
+  /**
+   * Single-series line chart over discrete, ordered samples (our scrape runs).
+   * One y-axis only — a second measure gets its own chart, never a twin axis.
+   */
+  function lineChart(host, points, { yFmt = int, yLabel = "", tipRow = () => "" }) {
+    if (points.length === 0) return emptyNote(host, "No data yet.");
+    if (points.length === 1) {
+      const p = points[0];
+      return emptyNote(
+        host,
+        `Only one scrape so far (${dshort(p.x)}: ${yFmt(p.y)}). A trend line appears from the second run onward.`,
+      );
+    }
+
+    const { w, h, l, r, t, b } = PLOT;
+    const iw = w - l - r;
+    const ih = h - t - b;
+    const ys = points.map((p) => p.y);
+    const { ticks, lo, hi } = niceTicks(Math.min(...ys), Math.max(...ys), 4);
+    const X = (i) => l + (points.length === 1 ? iw / 2 : (i / (points.length - 1)) * iw);
+    const Y = (v) => t + ih - ((v - lo) / (hi - lo)) * ih;
+
+    const g = [];
+    for (const tv of ticks) {
+      g.push(s("line", { class: "gridline", x1: l, x2: l + iw, y1: Y(tv), y2: Y(tv) }));
+      g.push(s("text", { x: l - 8, y: Y(tv) + 3, "text-anchor": "end" }, [yFmt(tv)]));
+    }
+    g.push(s("line", { class: "axisline", x1: l, x2: l + iw, y1: t + ih, y2: t + ih }));
+
+    // x labels: first, last, and a middle one if there's room
+    const idxs = new Set([0, points.length - 1]);
+    if (points.length > 4) idxs.add(Math.floor((points.length - 1) / 2));
+    for (const i of idxs) {
+      g.push(
+        s("text", { x: X(i), y: t + ih + 16, "text-anchor": i === 0 ? "start" : i === points.length - 1 ? "end" : "middle" }, [
+          dshort(points[i].x),
+        ]),
+      );
+    }
+
+    // 2px line, no dashes
+    g.push(
+      s("path", {
+        d: points.map((p, i) => `${i ? "L" : "M"}${X(i)},${Y(p.y)}`).join(" "),
+        fill: "none",
+        stroke: "var(--series-1)",
+        "stroke-width": 2,
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round",
+      }),
+    );
+
+    // Endpoint gets a direct label — never a number on every point.
+    const last = points[points.length - 1];
+    g.push(s("circle", { cx: X(points.length - 1), cy: Y(last.y), r: 4.5, fill: "var(--series-1)", stroke: "var(--surface-1)", "stroke-width": 2 }));
+    g.push(
+      s("text", { x: X(points.length - 1) - 8, y: Y(last.y) - 10, "text-anchor": "end", style: "fill:var(--text-primary);font-size:11px;font-weight:600" }, [
+        yFmt(last.y),
+      ]),
+    );
+
+    // Crosshair + tooltip: generous hit bands, not pinpoint targets.
+    const cross = s("line", { class: "axisline", y1: t, y2: t + ih, opacity: 0 });
+    g.push(cross);
+    const svg = s("svg", { viewBox: `0 0 ${w} ${h}`, role: "img", "aria-label": yLabel }, g);
+    const bandW = iw / points.length;
+    points.forEach((p, i) => {
+      const hit = s("rect", { class: "hit", x: Math.max(l, X(i) - bandW / 2), y: t, width: bandW, height: ih });
+      hit.addEventListener("mousemove", (e) => {
+        cross.setAttribute("x1", X(i));
+        cross.setAttribute("x2", X(i));
+        cross.setAttribute("opacity", 0.7);
+        showTip(e, `<b>${yFmt(p.y)}</b><br><span class="r">${dt(p.x)}</span>${tipRow(p)}`);
+      });
+      hit.addEventListener("mouseleave", () => {
+        cross.setAttribute("opacity", 0);
+        hideTip();
+      });
+      svg.append(hit);
+    });
+    host.replaceChildren(svg);
+  }
+
+  /** Price vs mileage. Two classes (used / delivery-mileage) = categorical slots 1 and 2. */
+  function scatterChart(host, rows, onPick) {
+    const pts = rows.filter((r) => r.price_eur != null && r.mileage_km != null);
+    if (!pts.length) return emptyNote(host, "No listings with both a price and a mileage figure.");
+
+    const { w, h, l, r: rr, t, b } = PLOT;
+    const iw = w - l - rr;
+    const ih = h - t - b;
+    const xs = pts.map((p) => p.mileage_km);
+    const ys = pts.map((p) => p.price_eur);
+    const X0 = niceTicks(Math.min(0, ...xs), Math.max(...xs), 5);
+    const Y0 = niceTicks(Math.min(...ys), Math.max(...ys), 4);
+    const X = (v) => l + ((v - X0.lo) / (X0.hi - X0.lo)) * iw;
+    const Y = (v) => t + ih - ((v - Y0.lo) / (Y0.hi - Y0.lo)) * ih;
+
+    const g = [];
+    for (const tv of Y0.ticks) {
+      g.push(s("line", { class: "gridline", x1: l, x2: l + iw, y1: Y(tv), y2: Y(tv) }));
+      g.push(s("text", { x: l - 8, y: Y(tv) + 3, "text-anchor": "end" }, [eurShort(tv)]));
+    }
+    for (const tv of X0.ticks) {
+      g.push(s("text", { x: X(tv), y: t + ih + 16, "text-anchor": "middle" }, [
+        tv >= 1000 ? Math.round(tv / 1000) + "k" : String(tv),
+      ]));
+    }
+    g.push(s("line", { class: "axisline", x1: l, x2: l + iw, y1: t + ih, y2: t + ih }));
+    g.push(s("text", { x: l + iw, y: t + ih + 28, "text-anchor": "end" }, ["mileage (km)"]));
+
+    const svg = s("svg", { viewBox: `0 0 ${w} ${h}`, role: "img", "aria-label": "Price versus mileage" }, g);
+
+    for (const p of pts) {
+      const used = (p.mileage_km ?? 0) > 1000;
+      const color = used ? "var(--series-1)" : "var(--series-2)";
+      // 2px surface ring so overlapping dots stay separable — not a hairline border.
+      const dot = s("circle", {
+        cx: X(p.mileage_km), cy: Y(p.price_eur), r: 5,
+        fill: color, stroke: "var(--surface-1)", "stroke-width": 2,
+        opacity: p.removed_at ? 0.4 : 1,
+      });
+      // Hit target is larger than the mark.
+      const hit = s("circle", { class: "hit", cx: X(p.mileage_km), cy: Y(p.price_eur), r: 13, style: "cursor:pointer" });
+      hit.addEventListener("mousemove", (e) =>
+        showTip(
+          e,
+          `<b>${eur(p.price_eur)}</b> · ${km(p.mileage_km)}<br>` +
+            `<span class="r">${esc(p.sub_title || p.title || "")}</span><br>` +
+            `<span class="r">${esc(p.seller_name || "")} · ${esc(p.country || "")}` +
+            `${p.first_reg_ym ? " · first reg " + p.first_reg_ym : ""}` +
+            `${p.previous_owners != null ? " · " + p.previous_owners + " owner(s)" : ""}</span>`,
+        ),
+      );
+      hit.addEventListener("mouseleave", hideTip);
+      hit.addEventListener("click", () => onPick(p.id));
+      svg.append(dot, hit);
+    }
+    host.replaceChildren(svg);
+
+    $("#scatterLegend").replaceChildren(
+      el("span", { html: `<i style="background:var(--series-1)"></i>Used (&gt;1,000 km)` }),
+      el("span", { html: `<i style="background:var(--series-2)"></i>New / delivery mileage` }),
+    );
+  }
+
+  /** Inline price sparkline for a table row. */
+  function sparkline(series) {
+    const w = 84, h = 22;
+    if (series.length < 2) return el("span", { class: "sub", text: "—" });
+    const ys = series.map((p) => p.price_eur);
+    const lo = Math.min(...ys), hi = Math.max(...ys);
+    const X = (i) => (i / (series.length - 1)) * (w - 2) + 1;
+    const Y = (v) => (hi === lo ? h / 2 : h - 3 - ((v - lo) / (hi - lo)) * (h - 6));
+    const flat = hi === lo;
+    const down = ys[ys.length - 1] < ys[0];
+    return s("svg", { viewBox: `0 0 ${w} ${h}`, width: w, height: h }, [
+      s("path", {
+        d: series.map((p, i) => `${i ? "L" : "M"}${X(i)},${Y(p.price_eur)}`).join(" "),
+        fill: "none",
+        stroke: flat ? "var(--muted)" : down ? "var(--good)" : "var(--critical)",
+        "stroke-width": 1.75,
+        "stroke-linejoin": "round",
+      }),
+    ]);
+  }
+
+  // --------------------------------------------------------------------- state
+  let DATA = null;
+  const state = { country: "", seller: "", condition: "", q: "", includeRemoved: "active", sort: "price_eur", dir: 1 };
+
+  const histByListing = new Map();
+
+  function applyFilters(rows) {
+    return rows.filter((r) => {
+      if (state.includeRemoved === "active" && r.removed_at) return false;
+      if (state.includeRemoved === "removed" && !r.removed_at) return false;
+      if (state.country && r.country !== state.country) return false;
+      if (state.seller && r.seller_name !== state.seller) return false;
+      if (state.condition === "used" && !((r.mileage_km ?? 0) > 1000)) return false;
+      if (state.condition === "new" && (r.mileage_km ?? 0) > 1000) return false;
+      if (state.q) {
+        const hay = `${r.id} ${r.title ?? ""} ${r.sub_title ?? ""} ${r.seller_name ?? ""} ${r.location ?? ""}`.toLowerCase();
+        if (!hay.includes(state.q.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }
+
+  // -------------------------------------------------------------------- render
+  function renderFilters() {
+    const uniq = (f) => [...new Set(DATA.listings.map(f).filter(Boolean))].sort();
+    const sel = (label, key, opts, allLabel) =>
+      el("label", {}, [
+        label,
+        el(
+          "select",
+          { onchange: (e) => { state[key] = e.target.value; render(); } },
+          [el("option", { value: "", text: allLabel }), ...opts.map((o) =>
+            el("option", { value: o, text: o, ...(state[key] === o ? { selected: "" } : {}) }),
+          )],
+        ),
+      ]);
+
+    $("#filters").replaceChildren(
+      el("label", {}, [
+        "Search",
+        el("input", {
+          type: "search", placeholder: "id, trim, seller, city…", value: state.q,
+          oninput: (e) => { state.q = e.target.value; render(); },
+        }),
+      ]),
+      sel("Country", "country", uniq((r) => r.country), "All"),
+      sel("Seller", "seller", uniq((r) => r.seller_name), "All"),
+      el("label", {}, [
+        "Condition",
+        el("select", { onchange: (e) => { state.condition = e.target.value; render(); } }, [
+          el("option", { value: "", text: "All" }),
+          el("option", { value: "used", text: "Used (>1,000 km)", ...(state.condition === "used" ? { selected: "" } : {}) }),
+          el("option", { value: "new", text: "New / delivery km", ...(state.condition === "new" ? { selected: "" } : {}) }),
+        ]),
+      ]),
+      el("label", {}, [
+        "Show",
+        el("select", { onchange: (e) => { state.includeRemoved = e.target.value; render(); } }, [
+          el("option", { value: "active", text: "Live only", ...(state.includeRemoved === "active" ? { selected: "" } : {}) }),
+          el("option", { value: "all", text: "Live + removed", ...(state.includeRemoved === "all" ? { selected: "" } : {}) }),
+          el("option", { value: "removed", text: "Removed only", ...(state.includeRemoved === "removed" ? { selected: "" } : {}) }),
+        ]),
+      ]),
+    );
+  }
+
+  function renderBanners() {
+    const b = [];
+    const o = DATA.overview;
+    if (!o.lastRun) {
+      b.push(el("div", { class: "banner bad", html: "<b>No successful scrape yet.</b> Run <code>npm run scrape</code>." }));
+    }
+    if (o.lastFailedRun && (!o.lastRun || o.lastFailedRun.id > o.lastRun.id)) {
+      b.push(
+        el("div", {
+          class: "banner warn",
+          html:
+            `<b>Last scrape failed</b> (run #${o.lastFailedRun.id}, ${esc(ago(o.lastFailedRun.started_at))}): ` +
+            `<code>${esc(o.lastFailedRun.error ?? "")}</code>. Figures below are from the last good run.`,
+        }),
+      );
+    }
+    if (o.runCount === 1) {
+      b.push(
+        el("div", {
+          class: "banner",
+          html:
+            "<span><b>Collecting baseline.</b> Trend charts need at least two scrapes — " +
+            "price history and new/removed detection start filling in from the next run.</span>",
+        }),
+      );
+    }
+    $("#banners").replaceChildren(...b);
+  }
+
+  function renderTiles(rows) {
+    const o = DATA.overview;
+    const prices = rows.map((r) => r.price_eur).filter((v) => v != null).sort((a, b) => a - b);
+    const median = prices.length
+      ? prices.length % 2
+        ? prices[(prices.length - 1) / 2]
+        : Math.round((prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2)
+      : null;
+    const mil = rows.map((r) => r.mileage_km).filter((v) => v != null);
+    const drops = DATA.changes.filter((c) => c.field === "price_eur" && +c.new_value < +c.old_value);
+    const lastRunNew = o.lastRun?.new_count ?? 0;
+    const lastRunGone = o.lastRun?.removed_count ?? 0;
+
+    const tile = (k, v, n) => el("div", { class: "tile" }, [
+      el("div", { class: "k", text: k }),
+      el("div", { class: "v", text: v }),
+      n ? el("div", { class: "n", html: n }) : null,
+    ]);
+
+    $("#tiles").replaceChildren(
+      tile("Listings shown", String(rows.length), `${o.active} live · ${o.removed} removed · ${o.totalTracked} ever seen`),
+      tile("Median price", eur(median), prices.length ? `${eur(prices[0])} – ${eur(prices[prices.length - 1])}` : ""),
+      tile("Avg mileage", mil.length ? km(Math.round(mil.reduce((a, b) => a + b, 0) / mil.length)) : "—", `${mil.length} of ${rows.length} report mileage`),
+      tile("New last run", String(lastRunNew), `${lastRunGone} removed`),
+      tile("Price cuts", String(drops.length), `${o.priceRises} increase(s) · ${o.runCount} scrape(s)`),
+    );
+  }
+
+  const COLS = [
+    { k: "id", label: "ID", fmt: (r) => r.id },
+    { k: "sub_title", label: "Trim", cls: "name", fmt: (r) => r.sub_title || r.title || "—" },
+    { k: "price_eur", label: "Price", num: true, fmt: (r) => eur(r.price_eur) },
+    { k: "price_delta", label: "Δ since 1st", num: true, fmt: (r) =>
+        !r.price_delta ? "—" : el("span", { class: r.price_delta < 0 ? "down" : "up", text: (r.price_delta < 0 ? "−" : "+") + eur(Math.abs(r.price_delta)).slice(1) }) },
+    { k: "_spark", label: "History", sortable: false, cls: "sparkcell", fmt: (r) => sparkline(histByListing.get(r.id) ?? []) },
+    { k: "mileage_km", label: "Mileage", num: true, fmt: (r) => km(r.mileage_km) },
+    { k: "first_reg_ym", label: "First reg", fmt: (r) => r.first_reg_ym ?? r.first_registration ?? "—" },
+    { k: "previous_owners", label: "Owners", num: true, fmt: (r) => (r.previous_owners == null ? "—" : String(r.previous_owners)) },
+    { k: "power_kw", label: "kW", num: true, fmt: (r) => int(r.power_kw) },
+    { k: "fuel", label: "Fuel", fmt: (r) => r.fuel ?? "—" },
+    { k: "seller_name", label: "Seller", cls: "name", fmt: (r) => r.seller_name ?? "—" },
+    { k: "country", label: "Country", fmt: (r) => `${r.country ?? "—"}${r.location ? " · " + r.location : ""}` },
+    { k: "first_seen_at", label: "First seen", fmt: (r) => dshort(r.first_seen_at) },
+    { k: "removed_at", label: "Status", fmt: (r) => (r.removed_at ? `removed ${dshort(r.removed_at)}` : "live") },
+  ];
+
+  function renderTable(rows) {
+    $("#thead").replaceChildren(
+      el("tr", {}, COLS.map((c) =>
+        el("th", {
+          class: c.num ? "num" : null,
+          onclick: c.sortable === false ? null : () => {
+            if (state.sort === c.k) state.dir *= -1;
+            else { state.sort = c.k; state.dir = 1; }
+            render();
+          },
+          html: esc(c.label) + (state.sort === c.k ? ` <span class="arrow">${state.dir > 0 ? "▲" : "▼"}</span>` : ""),
+        }),
+      )),
+    );
+
+    const sorted = [...rows].sort((a, b) => {
+      const va = a[state.sort], vb = b[state.sort];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;   // nulls always last, regardless of direction
+      if (vb == null) return -1;
+      return (typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb))) * state.dir;
+    });
+
+    $("#tbody").replaceChildren(
+      ...sorted.map((r) =>
+        el("tr", { class: r.removed_at ? "gone" : null, onclick: () => openDrawer(r.id) },
+          COLS.map((c) => {
+            const v = c.fmt(r);
+            return el("td", { class: [c.num ? "num" : "", c.cls ?? ""].join(" ").trim() || null }, typeof v === "string" ? [v] : [v]);
+          }),
+        ),
+      ),
+    );
+    $("#tableCount").textContent = `— ${sorted.length} shown`;
+  }
+
+  const FIELD_LABEL = {
+    price_eur: "Price", mileage_km: "Mileage", previous_owners: "Owners",
+    price_rating: "Price rating", vat: "VAT", condition: "Condition",
+    inspection: "Inspection", num_images: "Photos", title: "Title", sub_title: "Trim",
+  };
+
+  /** Change-feed values arrive as strings; render them in the field's own units. */
+  const fmtChange = (field, v) => {
+    if (v == null || v === "") return "—";
+    if (field === "price_eur") return eur(+v);
+    if (field === "mileage_km") return km(+v);
+    return String(v);
+  };
+
+  function renderFeed(visibleIds) {
+    const items = [];
+    for (const e of DATA.events) {
+      if (!visibleIds.has(e.listing_id)) continue;
+      items.push({
+        at: e.at, kind: e.type,
+        html:
+          `<span class="pill ${esc(e.type)}">${esc(e.type)}</span>` +
+          `<span>${esc(e.sub_title || e.title || e.listing_id)}` +
+          `${e.price_eur != null ? ` · <b>${eur(e.price_eur)}</b>` : ""}` +
+          `<br><span class="sub">${esc(e.seller_name ?? "")}</span></span>`,
+      });
+    }
+    for (const c of DATA.changes) {
+      if (!visibleIds.has(c.listing_id)) continue;
+      const isPrice = c.field === "price_eur";
+      const dn = isPrice && +c.new_value < +c.old_value;
+      const from = fmtChange(c.field, c.old_value);
+      const to = fmtChange(c.field, c.new_value);
+      const delta = isPrice ? `<span class="${dn ? "down" : "up"}"> (${dn ? "−" : "+"}${eur(Math.abs(+c.new_value - +c.old_value)).slice(1)})</span>` : "";
+      items.push({
+        at: c.at, kind: "change",
+        html:
+          `<span class="pill">${esc(FIELD_LABEL[c.field] ?? c.field)}</span>` +
+          `<span>${esc(c.sub_title || c.title || c.listing_id)}<br>` +
+          `<span class="sub">${esc(from)} → <b>${esc(to)}</b>${delta}</span></span>`,
+      });
+    }
+    items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+
+    if (!items.length) {
+      return emptyNote($("#feed"), DATA.overview.runCount <= 1
+        ? "Nothing to compare yet — the first scrape is the baseline."
+        : "No changes for the current filter.");
+    }
+    $("#feed").replaceChildren(
+      ...items.slice(0, 200).map((i) =>
+        el("div", { class: "fitem" }, [
+          el("div", { html: i.html, style: "display:flex;gap:8px;flex:1" }),
+          el("span", { class: "when", text: ago(i.at) }),
+        ]),
+      ),
+    );
+  }
+
+  function render() {
+    const rows = applyFilters(DATA.listings);
+    const visibleIds = new Set(rows.map((r) => r.id));
+
+    renderFilters();
+    renderBanners();
+    renderTiles(rows);
+
+    lineChart(
+      $("#chartMedian"),
+      DATA.medianTimeline.map((r) => ({ x: r.started_at, y: r.median_price, n: r.n })),
+      { yFmt: eurShort, yLabel: "Median asking price per scrape", tipRow: (p) => `<br><span class="r">${p.n} listings</span>` },
+    );
+    lineChart(
+      $("#chartCount"),
+      DATA.marketTimeline.map((r) => ({ x: r.started_at, y: r.active })),
+      { yFmt: int, yLabel: "Listings on the market per scrape" },
+    );
+    scatterChart($("#chartScatter"), rows, openDrawer);
+    renderFeed(visibleIds);
+    renderTable(rows);
+  }
+
+  // -------------------------------------------------------------------- drawer
+  async function openDrawer(id) {
+    const r = await fetch(`/api/listing/${id}`).then((x) => x.json());
+    if (r.error) return;
+    const L = r.listing;
+    const latest = r.snapshots[r.snapshots.length - 1] ?? {};
+    $("#dTitle").textContent = L.title || L.short_title || id;
+    $("#dSub").innerHTML =
+      `${esc(L.seller_name ?? "")} · ${esc(L.location ?? "")} ${esc(L.country ?? "")}` +
+      ` — <a href="${esc(L.url)}" target="_blank" rel="noopener">open on mobile.de ↗</a>`;
+
+    const chart = el("div");
+    const body = el("div", {}, [
+      el("h2", { style: "font-size:13px;margin:0 0 8px", text: "Price history" }),
+      chart,
+      el("h2", { style: "font-size:13px;margin:18px 0 8px", text: "Current details" }),
+      el("dl", { class: "kv" }, [
+        ["Price", eur(latest.price_eur)],
+        ["Mileage", km(latest.mileage_km)],
+        ["First registration", L.first_registration ?? "—"],
+        ["Previous owners", latest.previous_owners ?? "—"],
+        ["Power", latest.power_kw ? `${latest.power_kw} kW (${latest.power_hp} hp)` : "—"],
+        ["Fuel / gearbox", `${latest.fuel ?? "—"} / ${latest.transmission ?? "—"}`],
+        ["Colour", latest.color ?? "—"],
+        ["Doors / seats", `${latest.doors ?? "—"} / ${latest.seats ?? "—"}`],
+        ["Engine", latest.cubic_capacity ? int(latest.cubic_capacity) + " ccm" : "—"],
+        ["Weight", latest.weight_kg ? int(latest.weight_kg) + " kg" : "—"],
+        ["Emission class", latest.euro_class ?? "—"],
+        ["Inspection", latest.inspection ?? "—"],
+        ["VAT", latest.vat ?? "—"],
+        ["Price rating", latest.price_rating_label ?? latest.price_rating ?? "—"],
+        ["Photos", int(latest.num_images)],
+        ["First seen", dt(L.first_seen_at)],
+        ["Last seen", dt(L.last_seen_at)],
+        ["Status", L.removed_at ? `removed ${dt(L.removed_at)}` : "live"],
+        ["Scrapes seen in", String(r.snapshots.length)],
+      ].flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: String(v) })])),
+      r.changes.length
+        ? el("div", {}, [
+            el("h2", { style: "font-size:13px;margin:18px 0 8px", text: `Changes (${r.changes.length})` }),
+            ...r.changes.map((c) => {
+              const isPrice = c.field === "price_eur";
+              const dn = isPrice && +c.new_value < +c.old_value;
+              const delta = isPrice
+                ? ` <span class="${dn ? "down" : "up"}">(${dn ? "−" : "+"}${eur(Math.abs(+c.new_value - +c.old_value)).slice(1)})</span>`
+                : "";
+              return el("div", { class: "fitem" }, [
+                el("span", { class: "pill", text: FIELD_LABEL[c.field] ?? c.field }),
+                el("span", {
+                  style: "flex:1",
+                  html: `${esc(fmtChange(c.field, c.old_value))} → <b>${esc(fmtChange(c.field, c.new_value))}</b>${delta}`,
+                }),
+                el("span", { class: "when", text: dshort(c.at) }),
+              ]);
+            }),
+          ])
+        : null,
+    ]);
+    $("#dBody").replaceChildren(body);
+    lineChart(chart, r.snapshots.filter((x) => x.price_eur != null).map((x) => ({ x: x.seen_at, y: x.price_eur })), { yFmt: eurShort });
+
+    $("#drawer").classList.add("open");
+    $("#backdrop").classList.add("on");
+  }
+  const closeDrawer = () => {
+    $("#drawer").classList.remove("open");
+    $("#backdrop").classList.remove("on");
+  };
+  $("#dClose").onclick = closeDrawer;
+  $("#backdrop").onclick = closeDrawer;
+  addEventListener("keydown", (e) => e.key === "Escape" && closeDrawer());
+
+  // ---------------------------------------------------------------- theme + load
+  const applyTheme = (t) => {
+    if (t) document.documentElement.setAttribute("data-theme", t);
+    else document.documentElement.removeAttribute("data-theme");
+  };
+  applyTheme(localStorage.getItem("theme"));
+  $("#themeBtn").onclick = () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
+    next ? localStorage.setItem("theme", next) : localStorage.removeItem("theme");
+    applyTheme(next);
+    render();
+  };
+
+  async function load() {
+    DATA = await fetch("/api/data").then((r) => r.json());
+
+    histByListing.clear();
+    for (const p of DATA.priceHistory) {
+      if (!histByListing.has(p.listing_id)) histByListing.set(p.listing_id, []);
+      histByListing.get(p.listing_id).push(p);
+    }
+
+    document.title = `${DATA.label} — mobile.de tracker`;
+    $("#title").textContent = DATA.label;
+    $("#subtitle").innerHTML = `<a href="${esc(DATA.searchUrl)}" target="_blank" rel="noopener">source search ↗</a>`;
+
+    const lr = DATA.overview.lastRun;
+    $("#runline").textContent = lr
+      ? `Last scrape ${ago(lr.started_at)} (${dt(lr.started_at)}) · ${DATA.overview.runCount} scrape(s) · ` +
+        `${DATA.overview.snapshotCount} snapshots · minimum ${DATA.minMinutesBetweenRuns} min between runs`
+      : "No successful scrape yet.";
+
+    render();
+  }
+  $("#reloadBtn").onclick = load;
+  load();
+</script>

@@ -1,0 +1,76 @@
+name: probe mobile.de reachability
+
+# One-off feasibility test: can a GitHub-hosted runner load the search at all?
+# Results are committed back to the repo as probe-result.md so they can be read without
+# downloading logs or artifacts.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/probe-cloud.yml"
+      - "scripts/probe-cloud.mjs"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: npm ci
+
+      - name: Install xvfb (a real display for headed Chrome)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+
+      - name: Environment
+        run: |
+          node --version
+          which google-chrome-stable google-chrome chromium-browser chromium || true
+          (google-chrome --version || true)
+
+      - name: Probe
+        # xvfb-run gives Chrome a display, so it runs headed rather than headless.
+        run: xvfb-run -a --server-args="-screen 0 1440x900x24" node scripts/probe-cloud.mjs
+
+      - name: Upload fetched HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-debug-html
+          path: probe-debug/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Commit results back
+        if: always()
+        run: |
+          if [ ! -f probe-result.md ]; then
+            echo "probe produced no result file — the job itself failed; see the log above" > probe-result.md
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f probe-result.md probe-result.json 2>/dev/null || git add -f probe-result.md
+          git commit -m "probe: mobile.de reachability from a GitHub runner [skip ci]" || {
+            echo "nothing to commit"; exit 0;
+          }
+          git pull --rebase --autostash origin main || true
+          git push origin HEAD:main
+
+      - name: Summary
+        if: always()
+        run: cat probe-result.md >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,19 @@
+{
+  "name": "mobile-de-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Periodically snapshots a mobile.de search and tracks price/listing history",
+  "scripts": {
+    "scrape": "node --experimental-sqlite --no-warnings src/scrape.js",
+    "serve": "node --experimental-sqlite --no-warnings src/server.js",
+    "stats": "node --experimental-sqlite --no-warnings src/stats.js",
+    "test": "node --experimental-sqlite --no-warnings --test test/*.test.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+data/
+.chrome-profile/
+*.log
+debug/
+probe-debug/
+
+# Captured mobile.de HTML used as test fixtures. Deliberately not committed: it is someone
+# else's page content and includes dealer names, addresses and phone numbers. Tests that need
+# it skip when it is absent — see test/fixtures.js for how to capture your own.
+test/fixtures/*.html
