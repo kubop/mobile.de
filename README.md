@@ -233,8 +233,9 @@ stored as `NULL` and shown as `—`.
   drawer with the photo, a favourite toggle, the full price history and the spec sheet.
   **Columns** hides any column you don't want; the choice persists in `localStorage` per browser.
 
-Filters at the top scope every chart, the feed and the table together. Light and dark themes
-are both explicitly styled; the chart palette is validated for colour-vision deficiency.
+Filters at the top scope every chart, the feed and the table together. The **Auto / Light / Dark**
+control picks the theme — Auto follows your OS. Both themes are explicitly styled and the chart
+palette is validated for colour-vision deficiency.
 
 **Photos** are hotlinked from mobile.de's CDN rather than copied into the repo — the same request
 a browser makes when rendering their page, sent without a referrer. Only the four widths their

@@ -72,6 +72,19 @@
     border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer;
   }
   button.ghost:hover { background: var(--surface-1); }
+  button.ghost:focus-visible, .seg button:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
+  /* Three-way theme control. A cycling button had to pass through "system", which looks
+     identical to light or dark depending on the OS setting — so one press in three appeared to
+     do nothing. Showing all three states makes every press land where you aimed it. */
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    background: transparent; border: 0; color: var(--text-secondary);
+    font: inherit; font-size: 12px; padding: 5px 9px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button:hover { background: var(--surface-1); }
+  .seg button.on { background: var(--surface-1); color: var(--text-primary); font-weight: 600; }
 
   .banner {
     margin: 14px 0; padding: 10px 14px; border-radius: 10px; font-size: 13px;
@@ -243,8 +256,12 @@
     <h1 id="title">mobile.de tracker</h1>
     <span class="sub" id="subtitle"></span>
     <span class="spacer"></span>
-    <button class="ghost" id="themeBtn">theme</button>
-    <button class="ghost" id="reloadBtn">reload</button>
+    <div class="seg" id="themeSeg" role="group" aria-label="Colour theme">
+      <button type="button" data-theme="">Auto</button>
+      <button type="button" data-theme="light">Light</button>
+      <button type="button" data-theme="dark">Dark</button>
+    </div>
+    <button class="ghost" id="reloadBtn" title="Re-fetch the data and redraw (does not start a scrape)">reload</button>
   </header>
   <div class="sub" id="runline"></div>
 
@@ -1276,14 +1293,47 @@
   };
   $("#colBtn").onclick = () => (panelOpen() ? closePanel() : openPanel());
 
-  applyTheme(localStorage.getItem("theme"));
-  $("#themeBtn").onclick = () => {
-    const cur = document.documentElement.getAttribute("data-theme");
-    const next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
-    next ? localStorage.setItem("theme", next) : localStorage.removeItem("theme");
-    applyTheme(next);
-    render();
+  /** "" means follow the OS. Only "light" and "dark" are stored. */
+  const THEMES = ["", "light", "dark"];
+  const storedTheme = () => {
+    const t = localStorage.getItem("theme");
+    return THEMES.includes(t) ? t ?? "" : "";
   };
+
+  const systemIsDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+
+  function paintThemeSeg() {
+    const cur = storedTheme();
+    for (const btn of document.querySelectorAll("#themeSeg button")) {
+      const on = btn.dataset.theme === cur;
+      btn.classList.toggle("on", on);
+      // aria-pressed rather than a radiogroup: these are toggle buttons that apply instantly.
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+      if (btn.dataset.theme === "") {
+        btn.title = `Follow your system setting (currently ${systemIsDark() ? "dark" : "light"})`;
+      }
+    }
+  }
+
+  function setTheme(choice) {
+    try {
+      if (choice) localStorage.setItem("theme", choice);
+      else localStorage.removeItem("theme");
+    } catch {
+      /* private mode — applies for this session only */
+    }
+    applyTheme(choice);
+    paintThemeSeg();
+  }
+
+  for (const btn of document.querySelectorAll("#themeSeg button")) {
+    btn.onclick = () => setTheme(btn.dataset.theme);
+  }
+  // In Auto the CSS media query repaints on its own, but the tooltip would go stale.
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintThemeSeg);
+
+  applyTheme(storedTheme());
+  paintThemeSeg();
 
   /**
    * Works two ways from the same file: against the local server's live API, or — when
