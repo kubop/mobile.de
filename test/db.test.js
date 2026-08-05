@@ -8,6 +8,7 @@ import { extractSearchResults, dedupeById, normalizeListing } from "../src/extra
 import { loadFixture, skipIfMissing } from "./fixtures.js";
 
 const FIXTURE = "srp-2026-08-05.html";
+const LEGACY_FIXTURE = "srp-legacy-2026-08-05.html";
 const skip = skipIfMissing(FIXTURE);
 
 function baseRows() {
@@ -130,6 +131,27 @@ test("a returning listing is relisted, not duplicated", { skip }, () => {
   const l = db.prepare("SELECT removed_at FROM listing WHERE id=?").get("443379399");
   assert.equal(l.removed_at, null, "removed flag cleared");
   assert.equal(db.prepare("SELECT COUNT(*) c FROM event WHERE type='relisted'").get().c, 1);
+});
+
+test("a page-variant flip produces no phantom changes", { skip: skipIfMissing(FIXTURE, LEGACY_FIXTURE) }, () => {
+  // The real incident: the first scrape from GitHub reported 26 changed listings, 25 of which
+  // were only "19% VAT" vs "19.00% VAT" — the same rate formatted differently by the two page
+  // implementations mobile.de alternates between.
+  const rowsOf = (f) => dedupeById(extractSearchResults(loadFixture(f)).listings).map(normalizeListing);
+  const a = rowsOf(FIXTURE);
+  const bAll = rowsOf(LEGACY_FIXTURE);
+
+  // Only the cars present in both fixtures can be compared.
+  const ids = new Set(a.map((r) => r.id));
+  const b = bAll.filter((r) => ids.has(r.id));
+  assert.ok(b.length > 0, "the fixtures overlap, so there is something to diff");
+
+  const db = tmpDb();
+  doRun(db, a);
+  const r2 = doRun(db, b, { markGone: false });
+
+  const vatChanges = r2.changes.filter((c) => c.field === "vat");
+  assert.deepEqual(vatChanges, [], `a variant flip must not look like a VAT change: ${JSON.stringify(vatChanges)}`);
 });
 
 test("lastSuccessfulRun ignores failed runs", { skip }, () => {
