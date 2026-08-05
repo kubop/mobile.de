@@ -10,6 +10,7 @@ import {
   parseMonthYear,
   parseInteger,
   parseOnlineSince,
+  normalizeVat,
 } from "../src/extract.js";
 
 // mobile.de alternates between two SRP implementations; both must keep working.
@@ -49,6 +50,29 @@ test("parseOnlineSince converts the legacy date string", () => {
   assert.equal(parseOnlineSince("5/13/2026, 12:35"), Math.floor(Date.UTC(2026, 4, 13, 12, 35) / 1000));
   assert.equal(parseOnlineSince("$undefined"), null);
   assert.equal(parseOnlineSince("nonsense"), null);
+});
+
+test("normalizeVat collapses the two variants' formatting to one value", () => {
+  // The bug this exists for: one run logged 25 phantom VAT changes out of 26 because the served
+  // page implementation flipped.
+  assert.equal(normalizeVat("19.00% VAT"), "19% VAT");
+  assert.equal(normalizeVat("19% VAT"), "19% VAT");
+  assert.equal(normalizeVat("21.00% VAT"), "21% VAT");
+  assert.equal(normalizeVat("19.50% VAT"), "19.5% VAT", "a real fraction is kept");
+  assert.equal(normalizeVat("19,00% VAT"), "19% VAT", "comma decimal separator");
+  assert.equal(normalizeVat("VAT not deductible"), "VAT not deductible", "non-numeric passes through");
+  assert.equal(normalizeVat("$undefined"), null);
+  assert.equal(normalizeVat(null), null);
+});
+
+test("both page variants agree on VAT after normalisation", { skip }, () => {
+  const vats = (html) =>
+    [...new Set(dedupeById(extractSearchResults(html).listings).map(normalizeListing).map((r) => r.vat))]
+      .filter(Boolean)
+      .sort();
+  // Before the fix these differed only by "19%" vs "19.00%", and every flip looked like a change.
+  assert.deepEqual(vats(fixture), vats(legacy));
+  for (const v of vats(fixture)) assert.doesNotMatch(v, /\.\d*0%/, `${v} carries no trailing zeros`);
 });
 
 test("extracts the full result set from variant A (RSC)", { skip }, () => {

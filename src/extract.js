@@ -136,6 +136,24 @@ export function extractSearchResults(html) {
 /** "$undefined" is the RSC marker for an absent value. */
 const clean = (v) => (v === undefined || v === null || v === "$undefined" || v === "" ? null : v);
 
+/**
+ * Canonicalise a VAT rate.
+ *
+ * The two page implementations format the same rate differently — the RSC variant emits
+ * "19.00% VAT", the legacy one "19% VAT". Since mobile.de alternates between them, storing the
+ * string verbatim made nearly every listing look like it changed each time the variant flipped:
+ * one run recorded 25 such phantom changes out of 26. Percentages are reduced to their shortest
+ * exact form, so the two agree. Anything that is not a percentage passes through untouched.
+ */
+export function normalizeVat(v) {
+  const s = clean(v);
+  if (s === null || typeof s !== "string") return s;
+  return s.replace(/(\d+)(?:[.,](\d+))?\s*%/, (_m, whole, frac) => {
+    const trimmed = (frac ?? "").replace(/0+$/, "");
+    return trimmed ? `${whole}.${trimmed}%` : `${whole}%`;
+  });
+}
+
 export function parseInteger(s) {
   const v = clean(s);
   if (v === null) return null;
@@ -263,7 +281,7 @@ export function normalizeListing(raw) {
     conditionNew: raw.isConditionNew ? 1 : 0,
     hasDamage: raw.hasDamage ? 1 : 0,
     readyToDrive: raw.readyToDrive ? 1 : 0,
-    vat: clean(raw.vat) ?? clean(price.vat),
+    vat: normalizeVat(raw.vat) ?? normalizeVat(price.vat),
     // priceRating is an object: { rating, ratingLabel, noRatingReason }.
     priceRating: clean(raw.priceRating?.rating),
     priceRatingLabel: clean(raw.priceRating?.ratingLabel),
