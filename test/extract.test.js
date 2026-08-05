@@ -11,6 +11,7 @@ import {
   parseInteger,
   parseOnlineSince,
   normalizeVat,
+  normalizeImageUrl,
 } from "../src/extract.js";
 
 // mobile.de alternates between two SRP implementations; both must keep working.
@@ -50,6 +51,42 @@ test("parseOnlineSince converts the legacy date string", () => {
   assert.equal(parseOnlineSince("5/13/2026, 12:35"), Math.floor(Date.UTC(2026, 4, 13, 12, 35) / 1000));
   assert.equal(parseOnlineSince("$undefined"), null);
   assert.equal(parseOnlineSince("nonsense"), null);
+});
+
+test("normalizeImageUrl produces a usable absolute URL", () => {
+  // The RSC variant ships this shape. Stored verbatim it resolves against the dashboard's own
+  // origin and 404s; and the CDN returns 400 when the rule parameter is missing, so the scheme
+  // alone is not enough.
+  assert.equal(
+    normalizeImageUrl("img.classistatic.de/api/v1/mo-prod/images/50/abc"),
+    "https://img.classistatic.de/api/v1/mo-prod/images/50/abc?rule=mo-160w",
+  );
+  assert.equal(
+    normalizeImageUrl("//img.classistatic.de/x"),
+    "https://img.classistatic.de/x?rule=mo-160w",
+    "protocol-relative",
+  );
+  const already = "https://img.classistatic.de/x?rule=mo-160w";
+  assert.equal(normalizeImageUrl(already), already, "the legacy variant's URL is left alone");
+  assert.equal(
+    normalizeImageUrl("https://img.classistatic.de/x?foo=1"),
+    "https://img.classistatic.de/x?foo=1&rule=mo-160w",
+    "appends to an existing query string",
+  );
+  assert.equal(normalizeImageUrl("$undefined"), null);
+  assert.equal(normalizeImageUrl(null), null);
+});
+
+test("both variants yield absolute image URLs with a size rule", { skip }, () => {
+  // The original test only asserted an image was present, which the broken bare form satisfied.
+  for (const [name, html] of [["rsc", fixture], ["legacy", legacy]]) {
+    const imgs = dedupeById(extractSearchResults(html).listings).map(normalizeListing).map((r) => r.image);
+    assert.ok(imgs.length > 0, `${name} has listings`);
+    for (const u of imgs.filter(Boolean)) {
+      assert.match(u, /^https:\/\//, `${name}: ${u} is absolute`);
+      assert.match(u, /[?&]rule=mo-\d+w/, `${name}: ${u} carries a size rule`);
+    }
+  }
 });
 
 test("normalizeVat collapses the two variants' formatting to one value", () => {

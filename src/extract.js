@@ -154,6 +154,28 @@ export function normalizeVat(v) {
   });
 }
 
+/**
+ * Canonicalise a preview-image URL.
+ *
+ * The second place the two page implementations disagree (see normalizeVat for the first). The
+ * legacy variant emits a full "https://…?rule=mo-160w"; the RSC variant emits a bare
+ * "img.classistatic.de/…" with no scheme and no rule. Stored verbatim, the bare form resolves
+ * relative to the dashboard's own origin, so every photo 404s — and the CDN rejects the URL with
+ * HTTP 400 if the rule parameter is missing, so adding the scheme alone is not enough.
+ */
+export function normalizeImageUrl(v) {
+  const s = clean(v);
+  if (s === null || typeof s !== "string") return s;
+  let url = s.trim();
+  if (!url) return null;
+  if (url.startsWith("//")) url = `https:${url}`;
+  else if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  // mo-160w matches what the legacy variant ships, keeping one canonical stored form. Larger
+  // sizes are derived from it at display time.
+  if (!/[?&]rule=/.test(url)) url += `${url.includes("?") ? "&" : "?"}rule=mo-160w`;
+  return url;
+}
+
 export function parseInteger(s) {
   const v = clean(s);
   if (v === null) return null;
@@ -240,7 +262,7 @@ export function normalizeListing(raw) {
   const priceRaw = clean(raw.p) ?? clean(price.gross) ?? clean(price.grs?.localized);
   const makeName = typeof raw.make === "string" ? clean(raw.make) : clean(raw.make?.localized);
   const modelName = typeof raw.model === "string" ? clean(raw.model) : clean(raw.model?.localized);
-  const image = clean(raw.images?.[0]?.uri) ?? clean(raw.previewImage?.src);
+  const image = normalizeImageUrl(raw.images?.[0]?.uri) ?? normalizeImageUrl(raw.previewImage?.src);
 
   return toBindable({
     id: String(raw.id),

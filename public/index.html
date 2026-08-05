@@ -850,10 +850,22 @@
    */
   const IMAGE_WIDTHS = [160, 240, 360, 1024];
 
+  /**
+   * Repairs the URL before use, rather than trusting what was stored. The RSC page variant ships
+   * a scheme-less, rule-less URL: left alone it resolves against this page's own origin and 404s,
+   * and the CDN answers 400 if the rule parameter is missing. The extractor now canonicalises
+   * this, but older stored rows still carry the broken shape, so the repair lives here too.
+   */
   function photoSources(url) {
     if (!url) return null;
-    const m = url.match(/^(.*[?&]rule=)mo-\d+w(.*)$/);
-    if (!m) return { src: url, srcset: null }; // unexpected shape — use it verbatim
+    let u = String(url).trim();
+    if (!u) return null;
+    if (u.startsWith("//")) u = `https:${u}`;
+    else if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+    if (!/[?&]rule=/.test(u)) u += `${u.includes("?") ? "&" : "?"}rule=mo-160w`;
+
+    const m = u.match(/^(.*[?&]rule=)mo-\d+w(.*)$/);
+    if (!m) return { src: u, srcset: null }; // unexpected shape — use it verbatim
     const at = (w) => `${m[1]}mo-${w}w${m[2]}`;
     return { src: at(360), srcset: IMAGE_WIDTHS.map((w) => `${at(w)} ${w}w`).join(", ") };
   }
@@ -876,14 +888,18 @@
       sizes: "(max-width: 620px) 90vw, 360px",
       ...(srcs.srcset ? { srcset: srcs.srcset } : {}),
     });
+    // Retry once at the smallest size — repaired, not the raw stored value, which may be the
+    // broken scheme-less shape and would simply 404 again.
+    const small = srcs.srcset ? srcs.src.replace(/mo-\d+w/, "mo-160w") : null;
     img.addEventListener("error", () => {
-      if (img.dataset.fallback || !L.image || img.src === L.image) {
+      if (img.dataset.fallback || !small || img.src.endsWith(small)) {
         img.remove();
         return;
       }
       img.dataset.fallback = "1";
       img.removeAttribute("srcset");
-      img.src = L.image;
+      img.removeAttribute("sizes");
+      img.src = small;
     });
     return img;
   }
