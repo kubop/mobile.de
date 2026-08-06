@@ -1,1 +1,6 @@
 {"id":1,"listing_id":"455696026","run_id":5,"at":"2026-08-05T10:50:55.796Z","field":"price_eur","old_value":"324640","new_value":"324630"}
+{"id":2,"listing_id":"461283073","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"price_eur","old_value":"403290","new_value":"389900"}
+{"id":3,"listing_id":"461283073","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"mileage_km","old_value":"0","new_value":"500"}
+{"id":4,"listing_id":"461283073","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"previous_owners","old_value":"0","new_value":"1"}
+{"id":5,"listing_id":"461283073","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"condition","old_value":"New car","new_value":null}
+{"id":6,"listing_id":"437859259","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"price_eur","old_value":"314750","new_value":"306750"}
