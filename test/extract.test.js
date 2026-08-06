@@ -175,8 +175,7 @@ test("normalises a used car with all comparison fields", { skip }, () => {
   assert.equal(n.firstRegYm, "2024-01");
   assert.equal(n.powerKw, 552);
   assert.equal(n.powerHp, 751);
-  assert.equal(n.fuel, "Petrol");
-  assert.equal(n.transmission, "Automatic");
+  assert.equal(n.conditionNew, 0);
   assert.equal(n.make, "McLaren");
   assert.equal(n.model, "750S");
   assert.match(n.url, /id=443379399/);

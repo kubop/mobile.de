@@ -928,7 +928,6 @@
     { k: "first_reg_ym", label: "First reg", fmt: (r) => r.first_reg_ym ?? r.first_registration ?? "—" },
     { k: "previous_owners", label: "Owners", num: true, fmt: (r) => (r.previous_owners == null ? "—" : String(r.previous_owners)) },
     { k: "power_kw", label: "kW", num: true, fmt: (r) => int(r.power_kw) },
-    { k: "fuel", label: "Fuel", fmt: (r) => r.fuel ?? "—" },
     { k: "seller_name", label: "Seller", cls: "name", fmt: (r) => r.seller_name ?? "—" },
     { k: "country", label: "Country", fmt: (r) => `${r.country ?? "—"}${r.location ? " · " + r.location : ""}` },
     { k: "first_seen_at", label: "First seen", fmt: (r) => dshort(r.first_seen_at) },
@@ -1137,10 +1136,13 @@
     $("#tableCount").textContent = `— ${sorted.length} shown`;
   }
 
+  // price_rating and num_images are no longer tracked, but change rows recorded before they
+  // were dropped are still in the committed history, so keep their labels.
   const FIELD_LABEL = {
     price_eur: "Price", mileage_km: "Mileage", previous_owners: "Owners",
-    price_rating: "Price rating", vat: "VAT", condition: "Condition",
-    inspection: "Inspection", num_images: "Photos", title: "Title", sub_title: "Trim",
+    vat: "VAT", condition: "Condition", inspection: "Inspection",
+    title: "Title", sub_title: "Trim",
+    price_rating: "Price rating", num_images: "Photos",
   };
 
   /** Change-feed values arrive as strings; render them in the field's own units. */
@@ -1252,16 +1254,10 @@
         ["First registration", L.first_registration ?? "—"],
         ["Previous owners", latest.previous_owners ?? "—"],
         ["Power", latest.power_kw ? `${latest.power_kw} kW (${latest.power_hp} hp)` : "—"],
-        ["Fuel / gearbox", `${latest.fuel ?? "—"} / ${latest.transmission ?? "—"}`],
         ["Colour", latest.color ?? "—"],
-        ["Doors / seats", `${latest.doors ?? "—"} / ${latest.seats ?? "—"}`],
         ["Engine", latest.cubic_capacity ? int(latest.cubic_capacity) + " ccm" : "—"],
-        ["Weight", latest.weight_kg ? int(latest.weight_kg) + " kg" : "—"],
-        ["Emission class", latest.euro_class ?? "—"],
         ["Inspection", latest.inspection ?? "—"],
         ["VAT", latest.vat ?? "—"],
-        ["Price rating", latest.price_rating_label ?? latest.price_rating ?? "—"],
-        ["Photos", int(latest.num_images)],
         ["First seen", dt(L.first_seen_at)],
         ["Last seen", dt(L.last_seen_at)],
         ["Status", L.removed_at ? `removed ${dt(L.removed_at)}` : "live"],

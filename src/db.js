@@ -72,25 +72,14 @@ CREATE TABLE IF NOT EXISTS snapshot (
   previous_owners    INTEGER,
   power_kw           INTEGER,
   power_hp           INTEGER,
-  fuel               TEXT,
-  transmission       TEXT,
   condition          TEXT,
   condition_new      INTEGER,
   has_damage         INTEGER,
   ready_to_drive     INTEGER,
   vat                TEXT,
-  price_rating       TEXT,
-  price_rating_label TEXT,
-  num_images         INTEGER,
   color              TEXT,
-  doors              TEXT,
-  seats              TEXT,
   cubic_capacity     INTEGER,
-  weight_kg          INTEGER,
-  euro_class         TEXT,
   inspection         TEXT,
-  consumption        TEXT,
-  emissions          TEXT,
   modified_at        INTEGER,
   raw                TEXT,
   FOREIGN KEY (listing_id) REFERENCES listing(id)
@@ -125,11 +114,9 @@ const WATCHED_SNAPSHOT = [
   ["priceEur", "price_eur"],
   ["mileageKm", "mileage_km"],
   ["previousOwners", "previous_owners"],
-  ["priceRating", "price_rating"],
   ["vat", "vat"],
   ["condition", "condition"],
   ["inspection", "inspection"],
-  ["numImages", "num_images"],
 ];
 
 /** Same idea, but these columns live on `listing`, so they diff against the pre-update row. */
@@ -218,11 +205,10 @@ export function recordListings(db, runId, seenAt, rows) {
   const insertSnapshot = db.prepare(`
     INSERT INTO snapshot (
       listing_id, run_id, seen_at, price_eur, price_raw, mileage_km, previous_owners,
-      power_kw, power_hp, fuel, transmission, condition, condition_new, has_damage,
-      ready_to_drive, vat, price_rating, price_rating_label, num_images, color, doors, seats,
-      cubic_capacity, weight_kg, euro_class, inspection, consumption, emissions, modified_at, raw
+      power_kw, power_hp, condition, condition_new, has_damage, ready_to_drive, vat,
+      color, cubic_capacity, inspection, modified_at, raw
     ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )`);
 
   const insertChange = db.prepare(
@@ -279,10 +265,8 @@ export function recordListings(db, runId, seenAt, rows) {
 
       insertSnapshot.run(
         r.id, runId, seenAt, r.priceEur, r.priceRaw, r.mileageKm, r.previousOwners,
-        r.powerKw, r.powerHp, r.fuel, r.transmission, r.condition, r.conditionNew,
-        r.hasDamage, r.readyToDrive, r.vat, r.priceRating, r.priceRatingLabel, r.numImages,
-        r.color, r.doors, r.seats, r.cubicCapacity, r.weightKg, r.euroClass, r.inspection,
-        r.consumption, r.emissions, r.modifiedAt, r.raw,
+        r.powerKw, r.powerHp, r.condition, r.conditionNew, r.hasDamage, r.readyToDrive,
+        r.vat, r.color, r.cubicCapacity, r.inspection, r.modifiedAt, r.raw,
       );
     }
     db.exec("COMMIT");

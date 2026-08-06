@@ -254,14 +254,18 @@ UUID is the strongest available signal; a VIN would settle it but is only on the
 
 ### Fields captured per snapshot
 
-Price, mileage, first registration, previous owners, power (kW + hp), fuel, transmission,
-condition, VAT, price rating, photo count, colour, doors, seats, engine size, kerb weight,
-emission class, next inspection, consumption, emissions — plus seller, location and
-coordinates on the listing.
+Price, mileage, first registration, previous owners, power (kW + hp), condition, VAT, colour,
+engine size, next inspection — plus seller, location and coordinates on the listing.
 
-`previous_owners`, `first_registration` and `euro_class` are only present on ads where the
-seller filled them in (roughly 20 of 32 for owners at time of writing); missing values are
-stored as `NULL` and shown as `—`.
+mobile.de also ships fuel, gearbox, price rating, photo count, doors, seats, kerb weight,
+emission class, consumption and emissions. None of them were being used, and every one is a
+column on every snapshot row of the committed history, so they are deliberately not stored.
+The full original listing JSON is still kept in `snapshot.raw` locally (it is excluded from the
+export), so re-adding a field is a matter of one line in `extract.js`.
+
+`previous_owners` and `first_registration` are only present on ads where the seller filled them
+in (roughly 20 of 32 for owners at time of writing); missing values are stored as `NULL` and
+shown as `—`.
 
 ---
 

@@ -229,7 +229,8 @@ export function parseOnlineSince(s) {
 
 /**
  * SQLite only binds null/number/string. If mobile.de turns a scalar field into an object
- * (as it did with priceRating), coerce rather than lose the whole run to a bind error.
+ * (as it once did with priceRating, since dropped), coerce rather than lose the run to a
+ * bind error.
  */
 function toBindable(row) {
   for (const [k, v] of Object.entries(row)) {
@@ -297,26 +298,14 @@ export function normalizeListing(raw) {
     previousOwners: parseInteger(a.pvo),
     powerKw: power.kw,
     powerHp: power.hp,
-    fuel: clean(a.ft),
-    transmission: clean(a.tr),
     condition: clean(a.con),
     conditionNew: raw.isConditionNew ? 1 : 0,
     hasDamage: raw.hasDamage ? 1 : 0,
     readyToDrive: raw.readyToDrive ? 1 : 0,
     vat: normalizeVat(raw.vat) ?? normalizeVat(price.vat),
-    // priceRating is an object: { rating, ratingLabel, noRatingReason }.
-    priceRating: clean(raw.priceRating?.rating),
-    priceRatingLabel: clean(raw.priceRating?.ratingLabel),
-    numImages: parseInteger(raw.numImages),
     color: clean(a.ecol),
-    doors: clean(a.door),
-    seats: clean(a.sc),
     cubicCapacity: parseInteger(a.cc),
-    weightKg: parseInteger(a.nw),
-    euroClass: clean(a.emc),
     inspection: clean(a.gi),
-    consumption: clean(a.csmpt),
-    emissions: clean(a.emiss),
     modifiedAt: clean(raw.modified),
     raw: JSON.stringify(rawSlim),
   });

@@ -43,10 +43,8 @@ const TABLES = {
     // `raw` intentionally excluded — see the note above.
     columns: [
       "id", "listing_id", "run_id", "seen_at", "price_eur", "price_raw", "mileage_km",
-      "previous_owners", "power_kw", "power_hp", "fuel", "transmission", "condition",
-      "condition_new", "has_damage", "ready_to_drive", "vat", "price_rating",
-      "price_rating_label", "num_images", "color", "doors", "seats", "cubic_capacity",
-      "weight_kg", "euro_class", "inspection", "consumption", "emissions", "modified_at",
+      "previous_owners", "power_kw", "power_hp", "condition", "condition_new", "has_damage",
+      "ready_to_drive", "vat", "color", "cubic_capacity", "inspection", "modified_at",
     ],
   },
   change: {
