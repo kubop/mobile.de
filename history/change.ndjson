@@ -4,3 +4,90 @@
 {"id":4,"listing_id":"461283073","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"previous_owners","old_value":"0","new_value":"1"}
 {"id":5,"listing_id":"461283073","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"condition","old_value":"New car","new_value":null}
 {"id":6,"listing_id":"437859259","run_id":13,"at":"2026-08-06T10:49:29.584Z","field":"price_eur","old_value":"314750","new_value":"306750"}
+{"id":7,"listing_id":"455696026","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider CF Racing Seats B&W Carbon Lift","new_value":null}
+{"id":8,"listing_id":"455696026","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider CF Racing Seats B&W Carbon Lift","new_value":null}
+{"id":9,"listing_id":"455696026","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":10,"listing_id":"433020764","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider Performance I Lift I Black Pack","new_value":null}
+{"id":11,"listing_id":"433020764","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider Performance I Lift I Black Pack","new_value":null}
+{"id":12,"listing_id":"433020764","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":13,"listing_id":"462151649","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider MSO Paint I Lift I PPF","new_value":null}
+{"id":14,"listing_id":"462151649","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider MSO Paint I Lift I PPF","new_value":null}
+{"id":15,"listing_id":"462151649","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":16,"listing_id":"426267925","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider Carbon, Black Pack, B&W Sound","new_value":null}
+{"id":17,"listing_id":"426267925","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider Carbon, Black Pack, B&W Sound","new_value":null}
+{"id":18,"listing_id":"426267925","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":19,"listing_id":"447650425","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider 4.0 V8 | Papaya Spark | Electrochrom","new_value":null}
+{"id":20,"listing_id":"447650425","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider 4.0 V8 | Papaya Spark | Electrochrom","new_value":null}
+{"id":21,"listing_id":"447650425","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"21% VAT","new_value":null}
+{"id":22,"listing_id":"38508149293152","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider - Performance - Volt","new_value":null}
+{"id":23,"listing_id":"38508149293152","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider - Performance - Volt","new_value":null}
+{"id":24,"listing_id":"38508149293152","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"21% VAT","new_value":null}
+{"id":25,"listing_id":"462188894","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider MSO Paint I B&W I Lift","new_value":null}
+{"id":26,"listing_id":"462188894","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider MSO Paint I B&W I Lift","new_value":null}
+{"id":27,"listing_id":"443379399","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider 4.0 V8 | Volcano Yellow | Electrochr","new_value":null}
+{"id":28,"listing_id":"443379399","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider 4.0 V8 | Volcano Yellow | Electrochr","new_value":null}
+{"id":29,"listing_id":"437813261","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider 4.0 V8 | Mantis Green | Carbon Bonne","new_value":null}
+{"id":30,"listing_id":"437813261","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider 4.0 V8 | Mantis Green | Carbon Bonne","new_value":null}
+{"id":31,"listing_id":"437813261","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"21% VAT","new_value":null}
+{"id":32,"listing_id":"442497570","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider MSO.Black Pack, B&W Sound, Lift","new_value":null}
+{"id":33,"listing_id":"442497570","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider MSO.Black Pack, B&W Sound, Lift","new_value":null}
+{"id":34,"listing_id":"442497570","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":35,"listing_id":"461283626","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider CF Exterior I Onyx I B&W","new_value":null}
+{"id":36,"listing_id":"461283626","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider CF Exterior I Onyx I B&W","new_value":null}
+{"id":37,"listing_id":"461283626","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":38,"listing_id":"461283073","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider CF Exterior I Namaka Blue I B&W","new_value":null}
+{"id":39,"listing_id":"461283073","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider CF Exterior I Namaka Blue I B&W","new_value":null}
+{"id":40,"listing_id":"461283073","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":41,"listing_id":"461192574","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider / MSO Lava Grey / B&W / 360 / Lift","new_value":null}
+{"id":42,"listing_id":"461192574","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider / MSO Lava Grey / B&W / 360 / Lift","new_value":null}
+{"id":43,"listing_id":"461192574","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"20% VAT","new_value":null}
+{"id":44,"listing_id":"461076533","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider | Lift | Sport Exhaust | MSO Paint |","new_value":null}
+{"id":45,"listing_id":"461076533","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider | Lift | Sport Exhaust | MSO Paint |","new_value":null}
+{"id":46,"listing_id":"413923323","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider 4.0 V8 Performance | MSO | Electroch","new_value":null}
+{"id":47,"listing_id":"413923323","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider 4.0 V8 Performance | MSO | Electroch","new_value":null}
+{"id":48,"listing_id":"413923323","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"21% VAT","new_value":null}
+{"id":49,"listing_id":"447898398","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider, MwSt., Elite Paint Serpentine","new_value":null}
+{"id":50,"listing_id":"447898398","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider, MwSt., Elite Paint Serpentine","new_value":null}
+{"id":51,"listing_id":"447898398","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":52,"listing_id":"460126426","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider","new_value":null}
+{"id":53,"listing_id":"460126426","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider","new_value":null}
+{"id":54,"listing_id":"460126426","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"20% VAT","new_value":null}
+{"id":55,"listing_id":"458654094","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider","new_value":null}
+{"id":56,"listing_id":"458654094","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider","new_value":null}
+{"id":57,"listing_id":"458654094","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"21% VAT","new_value":null}
+{"id":58,"listing_id":"458567027","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider + LIFT + CARBON + MY2027","new_value":null}
+{"id":59,"listing_id":"458567027","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider + LIFT + CARBON + MY2027","new_value":null}
+{"id":60,"listing_id":"458567027","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":61,"listing_id":"439966078","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider | Carbon Exterior | Black Alcantara","new_value":null}
+{"id":62,"listing_id":"439966078","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider | Carbon Exterior | Black Alcantara","new_value":null}
+{"id":63,"listing_id":"457824927","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider MY27 - McLaren Milano","new_value":null}
+{"id":64,"listing_id":"457824927","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider MY27 - McLaren Milano","new_value":null}
+{"id":65,"listing_id":"457824927","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"22% VAT","new_value":null}
+{"id":66,"listing_id":"457798264","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider MY27 - McLaren Milano","new_value":null}
+{"id":67,"listing_id":"457798264","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider MY27 - McLaren Milano","new_value":null}
+{"id":68,"listing_id":"457798264","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"22% VAT","new_value":null}
+{"id":69,"listing_id":"456618526","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider MSO BESPOKE FULL CARBON LIST 385kNET","new_value":null}
+{"id":70,"listing_id":"456618526","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider MSO BESPOKE FULL CARBON LIST 385kNET","new_value":null}
+{"id":71,"listing_id":"456618526","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":72,"listing_id":"456260150","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider | Carbon Details | Anniversary","new_value":null}
+{"id":73,"listing_id":"456260150","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider | Carbon Details | Anniversary","new_value":null}
+{"id":74,"listing_id":"456260150","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":75,"listing_id":"452708009","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren Spider / Volcano Yellow / Comfort Seats / B&W","new_value":null}
+{"id":76,"listing_id":"452708009","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider / Volcano Yellow / Comfort Seats / B&W","new_value":null}
+{"id":77,"listing_id":"452708009","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"20% VAT","new_value":null}
+{"id":78,"listing_id":"450027209","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider","new_value":null}
+{"id":79,"listing_id":"450027209","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider","new_value":null}
+{"id":80,"listing_id":"450027209","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"21% VAT","new_value":null}
+{"id":81,"listing_id":"449930051","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider | MSO Paint | Carbon Exterior","new_value":null}
+{"id":82,"listing_id":"449930051","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider | MSO Paint | Carbon Exterior","new_value":null}
+{"id":83,"listing_id":"447954123","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider","new_value":null}
+{"id":84,"listing_id":"447954123","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider","new_value":null}
+{"id":85,"listing_id":"447954123","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"25% VAT","new_value":null}
+{"id":86,"listing_id":"447412024","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider CF Exterior I Mantis Green I B&W","new_value":null}
+{"id":87,"listing_id":"447412024","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider CF Exterior I Mantis Green I B&W","new_value":null}
+{"id":88,"listing_id":"447412024","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":89,"listing_id":"437859259","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider Perform. | Race Seats | Stealth Exh.","new_value":null}
+{"id":90,"listing_id":"437859259","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider Perform. | Race Seats | Stealth Exh.","new_value":null}
+{"id":91,"listing_id":"437859259","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"vat","old_value":"19% VAT","new_value":null}
+{"id":92,"listing_id":"432624461","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"title","old_value":"McLaren 750S Spider I Elite Paint I Garantie I Service P","new_value":null}
+{"id":93,"listing_id":"432624461","run_id":52,"at":"2026-08-10T09:48:14.759Z","field":"sub_title","old_value":"Spider I Elite Paint I Garantie I Service P","new_value":null}
