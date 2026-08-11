@@ -10,10 +10,14 @@ name: scrape and publish
 
 on:
   schedule:
-    # Every 2 hours, at :17 rather than on the hour — scheduled runs are best-effort and GitHub
-    # delays them most when the top of the hour is busy. 12 runs a day, 2 page fetches each.
-    # config.json's minMinutesBetweenRuns must stay well under 120 or this silently skips runs.
-    - cron: "17 */2 * * *"
+    # Every 6 hours, at :17 rather than on the hour — scheduled runs are best-effort and GitHub
+    # delays them most when the top of the hour is busy. 4 runs a day, 2 page fetches each.
+    # config.json's minMinutesBetweenRuns must stay well under 360 or this silently skips runs.
+    #
+    # This was every 2 hours until Akamai Bot Manager started denying about two thirds of runs.
+    # 24 search fetches a day against a path robots.txt disallows was the load most likely to
+    # have earned that; a search this small barely resolves finer than 6 hours anyway.
+    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -63,6 +67,21 @@ jobs:
       - name: Rebuild database from committed history
         run: node --experimental-sqlite --no-warnings src/history.js import
 
+      # Akamai Bot Manager issues a year-long `_abck` trust token and a family of `bm_*`
+      # cookies; presenting them again is what keeps a run from looking like a brand-new
+      # cookie-less client. Only the cookie store is cached — a full Chrome profile is ~130 MB
+      # of model and metrics data that Chrome recreates on its own. browser.js pins cookie
+      # encryption to Chrome's built-in key so the store survives the move between runners.
+      #
+      # actions/cache never overwrites an existing key, so each run saves under its own run id
+      # and restores whichever previous one is newest.
+      - name: Restore Chrome cookie store
+        uses: actions/cache/restore@v4
+        with:
+          path: .chrome-profile/Default/Network
+          key: chrome-cookies-${{ github.run_id }}
+          restore-keys: chrome-cookies-
+
       - name: Scrape
         id: scrape
         run: |
@@ -78,6 +97,17 @@ jobs:
             echo "::error::scrape failed — see the log above"
             exit 1
           fi
+
+      # Only after a success. A denied run's `_abck` carries Akamai's rejection, so keeping it
+      # would hand the next run a token already known to fail rather than a clean slate.
+      # The hashFiles guard matters for a run the minimum-interval guard skipped: no browser was
+      # launched, so there is no profile to save and cache/save would fail on the missing path.
+      - name: Save Chrome cookie store
+        if: always() && steps.scrape.outputs.scraped == 'true' && hashFiles('.chrome-profile/Default/Network/Cookies') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .chrome-profile/Default/Network
+          key: chrome-cookies-${{ github.run_id }}
 
       - name: Export history
         # Runs even on failure: a failed run is still recorded in the `run` table, and keeping

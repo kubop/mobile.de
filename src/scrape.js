@@ -43,10 +43,18 @@ function releaseLock() {
   fs.rmSync(paths.lock, { force: true });
 }
 
-/** Fetch and parse one SRP page, retrying once on a block before giving up. */
+/**
+ * Fetch and parse one SRP page.
+ *
+ * Retrying a block is off by default (`maxAttemptsPerPage: 1`) because it made things worse.
+ * Akamai answers a suspect request with a soft denial page — a 200 carrying "Zugriff
+ * verweigert" — and re-requesting from the same IP 45 s later turned that into a hard 403.
+ * A block is a verdict on the client, not a transient error, so the useful next attempt is the
+ * next scheduled run on a fresh runner. Raising this again re-enables the backoff path.
+ */
 async function fetchPage(page, cfg, pageNo) {
   const url = searchUrlForPage(cfg.searchUrl, pageNo);
-  const maxAttempts = cfg.politeness?.maxAttemptsPerPage ?? 2;
+  const maxAttempts = cfg.politeness?.maxAttemptsPerPage ?? 1;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log(`page ${pageNo}: GET${attempt > 1 ? ` (attempt ${attempt})` : ""}`);
@@ -92,7 +100,10 @@ async function fetchPage(page, cfg, pageNo) {
       `  HTTP ${status}, variant=${res.variant}, ${res.listings.length} listings` +
         (res.adSlotsSkipped ? ` (${res.adSlotsSkipped} ad slots skipped)` : "") +
         `, total reported: ${res.numResultsTotal}` +
-        (res.numPages ? `, pages: ${res.numPages}` : ""),
+        (res.numPages ? `, pages: ${res.numPages}` : "") +
+        // The reworked SRP is an rsc page too, so this count is the only thing in the log that
+        // distinguishes it from the older one.
+        (res.repairedFields ? `, ${res.repairedFields} fields recovered from the render tree` : ""),
     );
     return res;
   }

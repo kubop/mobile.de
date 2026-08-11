@@ -9,7 +9,12 @@ import { fileURLToPath } from "node:url";
  *   npm run scrape -- --dry-run --debug
  *   cp debug/page-1-attempt-1.html test/fixtures/srp-2026-08-05.html
  *
- * Tests that need a fixture skip with a message rather than failing when it is absent.
+ * Tests that need a fixture skip with a message rather than failing when it is absent, and each
+ * fixture is gated separately so a clone holding only some of them still runs what it can.
+ *
+ * Three variants are covered — see the page-variants section of CLAUDE.md. Which one you capture
+ * depends on what mobile.de serves that minute; check `variant` in the scrape log, and whether
+ * the listings carry a `title`, to know which one you got.
  */
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");

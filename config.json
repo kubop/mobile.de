@@ -9,7 +9,7 @@
     "pageDelayMs": [7000, 14000],
     "settleMs": [4000, 6500],
     "navTimeoutMs": 60000,
-    "maxAttemptsPerPage": 2,
+    "maxAttemptsPerPage": 1,
     "blockedBackoffMs": 45000
   },
 

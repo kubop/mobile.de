@@ -193,13 +193,31 @@ export function recordListings(db, runId, seenAt, rows) {
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL
     )`);
 
-  // Identity fields can legitimately be edited by the seller, so refresh them each run.
+  /**
+   * Identity fields can legitimately be edited by the seller, so refresh them each run — but
+   * COALESCE, never blindly.
+   *
+   * This is the only copy of these values: `listing` is updated in place, unlike `snapshot`,
+   * which appends a row per run. When the reworked SRP stopped shipping the display fields, an
+   * unconditional overwrite wiped every car's photo, title and seller name with no change-feed
+   * entry and nothing in the run summary — the dashboard simply lost its images until a run
+   * happened to be served the older page. A field mobile.de did not send is an absence of
+   * information, so the last known value is kept.
+   */
   const updateListing = db.prepare(`
     UPDATE listing SET
-      url=?, make=?, model=?, title=?, short_title=?, sub_title=?, first_registration=?,
-      first_reg_ym=?, year_of_construction=?, category=?, sub_category=?, seller_type=?,
-      seller_name=?, seller_id=?, country=?, zip=?, location=?, lat=?, lon=?, image=?,
-      created_at=?, last_seen_at=?, last_seen_run=?, removed_at=NULL
+      url=?,
+      make=COALESCE(?, make), model=COALESCE(?, model), title=COALESCE(?, title),
+      short_title=COALESCE(?, short_title), sub_title=COALESCE(?, sub_title),
+      first_registration=COALESCE(?, first_registration),
+      first_reg_ym=COALESCE(?, first_reg_ym),
+      year_of_construction=COALESCE(?, year_of_construction),
+      category=COALESCE(?, category), sub_category=COALESCE(?, sub_category),
+      seller_type=COALESCE(?, seller_type), seller_name=COALESCE(?, seller_name),
+      seller_id=COALESCE(?, seller_id), country=COALESCE(?, country), zip=COALESCE(?, zip),
+      location=COALESCE(?, location), lat=COALESCE(?, lat), lon=COALESCE(?, lon),
+      image=COALESCE(?, image), created_at=COALESCE(?, created_at),
+      last_seen_at=?, last_seen_run=?, removed_at=NULL
     WHERE id=?`);
 
   const insertSnapshot = db.prepare(`
@@ -218,13 +236,31 @@ export function recordListings(db, runId, seenAt, rows) {
     "INSERT INTO event (listing_id, run_id, at, type) VALUES (?, ?, ?, ?)",
   );
 
-  const sameText = (a, b) => (a === null ? null : String(a)) === (b === null ? null : String(b));
-  const diff = (id, col, before, after) => {
-    if (sameText(before ?? null, after ?? null)) return;
+  const record = (id, col, before, after) => {
     const a = before == null ? null : String(before);
     const b = after == null ? null : String(after);
+    if (a === b) return;
     insertChange.run(id, runId, seenAt, col, a, b);
     changes.push({ id, field: col, from: a, to: b });
+  };
+
+  /**
+   * Snapshot fields are stored exactly as seen, so a value arriving or disappearing is a fact
+   * about that run and worth recording. Run 13 is why this must not be suppressed: a dealer
+   * turned a new car into a used demo, and `condition` going "New car" -> null was part of the
+   * same real event as its price, mileage and owner count all moving.
+   */
+  const diffSnapshot = record;
+
+  /**
+   * Listing fields are COALESCEd on update, so when mobile.de sends nothing the stored value is
+   * kept — there is no change to report, and claiming one would contradict what the table now
+   * holds. This is what stops a variant flip from logging a title and subtitle change for every
+   * car; the reworked SRP produced 62 such entries per flip.
+   */
+  const diffListing = (id, col, before, after) => {
+    if (before == null || after == null) return;
+    record(id, col, before, after);
   };
 
   db.exec("BEGIN");
@@ -244,7 +280,7 @@ export function recordListings(db, runId, seenAt, rows) {
       } else {
         const wasRemoved = existing.removed_at !== null;
         // Diff listing-level fields against the row as it stands *before* we overwrite it.
-        for (const [jsKey, col] of WATCHED_LISTING) diff(r.id, col, existing[col], r[jsKey]);
+        for (const [jsKey, col] of WATCHED_LISTING) diffListing(r.id, col, existing[col], r[jsKey]);
         updateListing.run(
           r.url, r.make, r.model, r.title, r.shortTitle, r.subTitle, r.firstRegistration,
           r.firstRegYm, r.yearOfConstruction, r.category, r.subCategory, r.sellerType,
@@ -260,7 +296,7 @@ export function recordListings(db, runId, seenAt, rows) {
       // Diff against the previous snapshot before inserting the new one.
       const prev = getPrevSnap.get(r.id);
       if (prev) {
-        for (const [jsKey, col] of WATCHED_SNAPSHOT) diff(r.id, col, prev[col], r[jsKey]);
+        for (const [jsKey, col] of WATCHED_SNAPSHOT) diffSnapshot(r.id, col, prev[col], r[jsKey]);
       }
 
       insertSnapshot.run(

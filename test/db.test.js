@@ -9,6 +9,7 @@ import { loadFixture, skipIfMissing } from "./fixtures.js";
 
 const FIXTURE = "srp-2026-08-05.html";
 const LEGACY_FIXTURE = "srp-legacy-2026-08-05.html";
+const MIGRATED_FIXTURE = "srp-migrated-2026-08-11.html";
 const skip = skipIfMissing(FIXTURE);
 
 function baseRows() {
@@ -153,6 +154,72 @@ test("a page-variant flip produces no phantom changes", { skip: skipIfMissing(FI
   const vatChanges = r2.changes.filter((c) => c.field === "vat");
   assert.deepEqual(vatChanges, [], `a variant flip must not look like a VAT change: ${JSON.stringify(vatChanges)}`);
 });
+
+test("a payload that stops carrying a field neither wipes it nor logs a change", { skip }, () => {
+  // What the reworked SRP did before extract.js learned to read the render tree: every listing
+  // came back with title, sub_title, image and seller_name null. `listing` is updated in place,
+  // unlike `snapshot`, so an unconditional overwrite destroyed the only copy — and silently,
+  // since image and seller_name are not diffed at all.
+  const db = tmpDb();
+  const full = baseRows();
+  doRun(db, full);
+
+  const hollow = baseRows().map((r) => ({
+    ...r,
+    title: null, subTitle: null, shortTitle: null, image: null, sellerName: null, vat: null,
+  }));
+  const r2 = doRun(db, hollow, { markGone: false });
+
+  // Listing fields are kept, so reporting a change would contradict the table. Snapshot fields
+  // are stored as seen, so vat going absent is still recorded — deliberately asymmetric, because
+  // a real "New car" -> null once accompanied a genuine price, mileage and owner change.
+  assert.deepEqual(
+    r2.changes.filter((c) => ["title", "sub_title"].includes(c.field)),
+    [],
+    "a preserved field is not a change",
+  );
+  assert.equal(
+    r2.changes.filter((c) => c.field === "vat" && c.to === null).length,
+    full.filter((r) => r.vat != null).length,
+    "a snapshot field going absent is still recorded",
+  );
+
+  const before = full[0];
+  const after = db
+    .prepare("SELECT title, sub_title, short_title, image, seller_name FROM listing WHERE id = ?")
+    .get(before.id);
+  assert.equal(after.title, before.title, "title survived");
+  assert.equal(after.sub_title, before.subTitle);
+  assert.equal(after.short_title, before.shortTitle);
+  assert.equal(after.image, before.image, "the photo survived");
+  assert.equal(after.seller_name, before.sellerName, "the seller name survived");
+});
+
+test(
+  "a flip to the reworked SRP preserves the fields it cannot carry",
+  { skip: skipIfMissing(FIXTURE, MIGRATED_FIXTURE) },
+  () => {
+    const rowsOf = (f) => dedupeById(extractSearchResults(loadFixture(f)).listings).map(normalizeListing);
+    const a = rowsOf(FIXTURE);
+    const ids = new Set(a.map((r) => r.id));
+    const c = rowsOf(MIGRATED_FIXTURE).filter((r) => ids.has(r.id));
+    assert.ok(c.length > 0, "the fixtures overlap, so there is something to diff");
+
+    const db = tmpDb();
+    doRun(db, a);
+    const r2 = doRun(db, c, { markGone: false });
+
+    // Prices genuinely moved between the two captures; the display fields must not have.
+    const phantom = r2.changes.filter((ch) => ["title", "sub_title", "vat"].includes(ch.field));
+    assert.deepEqual(phantom, [], `variant flip must not look like a change: ${JSON.stringify(phantom)}`);
+
+    // seller_name is absent from the reworked payload altogether, so it can only survive by
+    // being kept rather than overwritten.
+    const row = db.prepare("SELECT seller_name, image FROM listing WHERE id = ?").get(c[0].id);
+    assert.ok(row.seller_name, "seller name kept from the earlier variant");
+    assert.ok(row.image, "photo kept");
+  },
+);
 
 test("lastSuccessfulRun ignores failed runs", { skip }, () => {
   const db = tmpDb();

@@ -14,6 +14,9 @@ import { paths, sleep } from "./config.js";
 
 const IS_WINDOWS = process.platform === "win32";
 
+/** How long to let Chrome quit on its own before killing it. See `close()` for why it matters. */
+const GRACEFUL_EXIT_MS = 8000;
+
 const CHROME_CANDIDATES = IS_WINDOWS
   ? [
       "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -104,6 +107,11 @@ export async function openSession(cfg, log = console.log) {
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
     "--disable-background-timer-throttling",
+    // Linux only, and only meaningful because the cookie store is cached between CI runs:
+    // pin cookie encryption to Chrome's built-in key rather than whatever keyring the machine
+    // happens to expose. Otherwise the store is encrypted per-machine and carrying it from one
+    // runner to the next silently yields nothing.
+    ...(IS_WINDOWS ? [] : ["--password-store=basic"]),
     ...(cfg.browser?.extraArgs ?? []),
     "about:blank",
   ];
@@ -122,17 +130,52 @@ export async function openSession(cfg, log = console.log) {
   const proc = spawn(exe, args, { stdio: "ignore", windowsHide: true });
   proc.on("error", (e) => log(`browser process error: ${e.message}`));
 
+  let exited = false;
+  const exitedPromise = new Promise((resolve) =>
+    proc.once("exit", () => {
+      exited = true;
+      resolve();
+    }),
+  );
+
   let browser;
   let closed = false;
+  /**
+   * Shut Chrome down cleanly, because a profile is only written to disk on a graceful exit.
+   *
+   * mobile.de sits behind Akamai Bot Manager, which hands a browser a year-long `_abck` trust
+   * token plus a family of `bm_*` cookies. SIGKILLing Chrome threw those away seconds after
+   * they were earned, so `keepProfile` was persisting an empty cookie store and every run
+   * started cold and cookie-less — the state most likely to be challenged.
+   *
+   * `browser.close()` only detaches the CDP connection; on a browser we attached to rather
+   * than launched, it leaves the process running. So ask Chrome itself to quit, and keep the
+   * kill purely as a backstop for a browser that will not go.
+   */
   const close = async () => {
     if (closed) return;
     closed = true;
-    try {
-      await browser?.close();
-    } catch {
-      /* ignore */
+    if (browser) {
+      try {
+        const cdp = await browser.newBrowserCDPSession();
+        await cdp.send("Browser.close");
+      } catch {
+        /* no usable connection — fall through to the kill */
+      }
+      try {
+        await browser.close();
+      } catch {
+        /* ignore */
+      }
+      await Promise.race([exitedPromise, sleep(GRACEFUL_EXIT_MS)]);
+      if (!exited) {
+        log(
+          `Chrome did not exit within ${GRACEFUL_EXIT_MS / 1000}s — killing it; ` +
+            `cookies earned this run will be lost`,
+        );
+      }
     }
-    if (proc.pid) killTree(proc.pid);
+    if (!exited && proc.pid) killTree(proc.pid);
   };
 
   // Make sure a crash mid-scrape never leaves an orphaned Chrome behind.

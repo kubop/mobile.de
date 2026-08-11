@@ -63,30 +63,78 @@ binary with `--remote-debugging-port` and connects via `connectOverCDP`. Never r
 A real display is required. On Linux/CI that means `xvfb-run`; `browser.js` refuses to start
 without `DISPLAY` rather than falling back to headless, which would just be blocked.
 
+### The blocker is Akamai Bot Manager, and it is cookie-shaped
+
+Confirmed from response headers (`akamai-grn`, `akamai-request-bc`, `x-akamai-transformed`) and
+the cookies it sets: `_abck` (a **one-year** trust token), `bm_s`, `bm_so`, `bm_lso`, `bm_sz`,
+`ak_bmsc`, `bm_sc`. Three consequences shape the code:
+
+- **Chrome must exit gracefully or the token is lost.** A profile is only written on clean
+  shutdown, and `browser.close()` merely detaches a CDP connection — on a browser we attached to
+  rather than launched, the process keeps running. `close()` therefore sends CDP `Browser.close`
+  and waits, killing only as a backstop. Before that, `keepProfile: true` was persisting a cookie
+  store with **zero** rows: every run re-earned trust from cold, which is the state that gets
+  challenged.
+- **A block must not be retried.** Akamai answers a suspect request with a soft denial — a 200
+  whose title is "Zugriff verweigert" — and re-requesting from the same IP 45 s later escalates
+  it to a hard 403. `maxAttemptsPerPage` is 1 for that reason. `detectBlock()` checks status
+  before content, so a `denial page (title)` in the log means the status was *not* 403.
+- **Volume is the lever that matters.** Two thirds of runs were being denied at 12 runs a day
+  against a path `robots.txt` disallows; the cron is 6-hourly now.
+
+CI caches only `.chrome-profile/Default/Network` — a whole profile is ~130 MB of model and
+metrics data Chrome recreates anyway — and saves it only after a successful scrape, so a token
+carrying Akamai's rejection is never handed to the next run. `--password-store=basic` on Linux
+pins cookie encryption to Chrome's built-in key; without it the store is encrypted per-machine
+and moving it between runners silently achieves nothing.
+
 ### Two page variants, and the bug class they cause
 
-mobile.de alternates between an `rsc` implementation (Next.js flight stream) and an
-`initial-state` one (`window.__INITIAL_STATE__`). `extract.js` supports both and never parses
-HTML — the complete result set is embedded as JSON.
+mobile.de alternates between **three** SRP implementations. `extract.js` supports all of them
+and never parses HTML — the result set is embedded as JSON.
+
+| Variant | Detected as | Result array | Notes |
+|---|---|---|---|
+| RSC | `rsc` | `searchResults.listings` | Next.js flight stream, 42 keys per listing |
+| legacy | `initial-state` | `searchResults.items` | `window.__INITIAL_STATE__`, also carries `numPages`/`hasNextPage` |
+| reworked | `rsc` | `searchResults.listings` | 15 keys; display fields only in the render tree |
+
+The reworked one is the trap: it is an RSC page too, so `variant` **cannot** tell it from the
+first. Its listing markup carries `isCosSrpMigrationVariant: true`, and its `searchResults`
+dropped title, subtitle, VAT, preview image, seller name and `onlineSince`. `renderTreeFields()`
+reads the first four back out of the rendered component props, joining them to listing ids via
+the numbered slot testIds (`base-result-listing-3` and its `-title` / `-image` / `-price-section`
+children). Seller name and `onlineSince` are behind `$L` chunk references and build-hashed class
+names, and lat/lon are gone from the page entirely — those keep their last known value instead.
 
 **The variants format identical data differently, so any field stored verbatim can produce
-phantom diffs or broken values whenever the served variant flips.** This has happened twice in
-production:
+phantom diffs or broken values whenever the served variant flips.** This has happened three
+times in production:
 
 - VAT — `19.00% VAT` vs `19% VAT`. One run recorded 25 phantom changes out of 26.
 - image URL — `img.classistatic.de/…` with no scheme and no `rule` param, vs a full
   `https://…?rule=mo-160w`. Scheme-less URLs resolve against the dashboard's own origin and
   404; the CDN also rejects a missing `rule` with HTTP 400.
+- the reworked SRP's missing fields — 87 phantom changes in one run, and a silent wipe of every
+  photo and seller name, because `listing` is updated in place. Fixed on both sides: the parser
+  recovers what it can, and `updateListing` COALESCEs so an absent field can never overwrite a
+  known value. `diff()` also ignores transitions to or from null — a field appearing or
+  vanishing describes the page we were served, not the car.
+- seller type — the reworked payload kept only `contact.enumType` (`DEALER`) where the others
+  send `Dealer`. `normalizeSellerEnum()` restores the display form.
 
-`normalizeVat()` and `normalizeImageUrl()` fix these. When adding or changing an extracted
-field, check it against **both** fixtures, and assert its shape rather than its presence — the
-broken image URL satisfied `assert.ok(r.image)`. If a run reports an implausible `changed`
-count, group `history/change.ndjson` by field; that is how both bugs were found.
+When adding or changing an extracted field, check it against **all three** fixtures and assert
+its shape rather than its presence — the broken image URL satisfied `assert.ok(r.image)`, and 31
+hollow listings satisfied every count-based guard. The strongest test available is
+cross-variant: for ads present in two fixtures, the display fields must be byte-identical, which
+is what catches a mis-joined render tree that per-row null checks cannot see. If a run reports
+an implausible `changed` count, group `history/change.ndjson` by field; that is how all three
+bugs were found.
 
 ### history/ is the durable record, not data/mobile.sqlite
 
 The SQLite file and the built `data.json` are rewritten wholesale every run, so committing
-either would add a fresh ~200 KB binary blob 12 times a day. `history/*.ndjson` is append-mostly
+either would add a fresh ~200 KB binary blob on every scheduled run. `history/*.ndjson` is append-mostly
 instead, so git deltas it well. Consequences worth knowing:
 
 - `snapshot.raw` is deliberately excluded from the export. `getListingDetail()` strips the
@@ -120,8 +168,9 @@ favourited car can vanish and return, and discarding the id would destroy user d
 
 ## Workflows
 
-- **scrape and publish** — cron `17 */2 * * *`, plus `workflow_dispatch` and a push filter on
-  its own file. Imports history, scrapes under xvfb, exports, commits, publishes.
+- **scrape and publish** — cron `17 */6 * * *`, plus `workflow_dispatch` and a push filter on
+  its own file. Restores the cached Chrome cookie store, imports history, scrapes under xvfb,
+  saves the cookie store again if the scrape succeeded, exports, commits, publishes.
 - **publish dashboard** — rebuilds and deploys from committed history with no network access to
   mobile.de and no write permission. Use this to republish without scraping.
 - **probe mobile.de reachability** — one-off diagnostic; commits findings to `probe-result.md`.
@@ -145,6 +194,16 @@ containing dealer names, addresses and phone numbers, and this is a public repo.
 them skip with a message rather than failing, so a fresh clone shows passes and skips, never red.
 Capture your own with `npm run scrape -- --dry-run --debug` and copy from `debug/`.
 
-Both page variants must keep working, so most extractor and storage tests run against both
-fixtures. When fixing a data bug, verify the new test fails with the fix reverted — that is how
-the VAT and image-URL regressions were confirmed to test anything at all.
+All three page variants must keep working, so most extractor and storage tests run against every
+fixture:
+
+| Fixture | Variant |
+|---|---|
+| `srp-2026-08-05.html` | RSC, full payload |
+| `srp-legacy-2026-08-05.html` | `window.__INITIAL_STATE__` |
+| `srp-migrated-2026-08-11.html` | reworked RSC, display fields only rendered |
+
+Each is gated separately, so a clone holding only some of them still runs what it can.
+
+When fixing a data bug, verify the new test fails with the fix reverted — that is how the VAT,
+image-URL and reworked-SRP regressions were each confirmed to test anything at all.

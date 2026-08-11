@@ -38,34 +38,47 @@ offscreen (`browser.offscreen` in `config.json`).
 Once the page loads, no HTML parsing is involved: mobile.de embeds the complete, structured
 result set in the page as JSON, and `src/extract.js` pulls it straight out.
 
-### Two page variants
+### Three page variants
 
-mobile.de alternates between two search-results implementations; both were observed live and
-both are supported:
+mobile.de alternates between three search-results implementations; all were observed live and
+all are supported:
 
 - **`rsc`** — Next.js App Router. Data arrives in the RSC flight stream
-  (`self.__next_f.push([1, "…"])`); the array is `searchResults.listings`.
+  (`self.__next_f.push([1, "…"])`); the array is `searchResults.listings`, 42 keys per listing.
 - **`initial-state`** — legacy. Data sits in `window.__INITIAL_STATE__`; the array is
   `searchResults.items`, interleaved with advertising slots (filtered out by id), and it
   helpfully also reports `numPages` / `hasNextPage`.
+- **the reworked SRP** — also an RSC page, so it reports itself as `rsc` and the log cannot
+  distinguish it. Its listing markup carries `isCosSrpMigrationVariant: true` and its
+  `searchResults.listings` items are down to 15 keys. The display fields are still on the page,
+  but only as props of the rendered components, so `renderTreeFields()` reads them back from
+  there — joined to listing ids through the numbered slot testIds (`base-result-listing-3`, plus
+  its `-title`, `-image` and `-price-section` children) rather than by position, since sponsored
+  slots repeat ads.
 
-The scrape log prints which variant it got. `test/fixtures/` holds a captured page of each, and
-`npm test` asserts both still normalise to the same shape — that is the early-warning system if
-mobile.de changes something.
+`test/fixtures/` holds a captured page of each, and `npm test` asserts they all normalise to the
+same shape — that is the early-warning system if mobile.de changes something.
 
-**The two variants format identical data differently, and storing a value verbatim has bitten
-twice.** Both were live bugs, so treat this as the default suspicion for anything odd:
+**The variants format identical data differently, and storing a value verbatim has bitten three
+times.** All were live bugs, so treat this as the default suspicion for anything odd:
 
-| Field | `rsc` emits | `initial-state` emits | Symptom before normalising |
-|---|---|---|---|
-| VAT | `19.00% VAT` | `19% VAT` | Every variant flip logged a change on nearly every listing — one run recorded 25 phantom changes out of 26 |
-| image URL | `img.classistatic.de/…` (no scheme, no `rule`) | `https://…?rule=mo-160w` | Photos 404: a scheme-less URL resolves against the dashboard's own origin. The CDN also returns **400** if `rule` is missing, so adding the scheme alone is not enough |
+| Field | The disagreement | Symptom before normalising |
+|---|---|---|
+| VAT | `19.00% VAT` vs `19% VAT` | Every variant flip logged a change on nearly every listing — one run recorded 25 phantom changes out of 26 |
+| image URL | `img.classistatic.de/…` (no scheme, no `rule`) vs `https://…?rule=mo-160w` | Photos 404: a scheme-less URL resolves against the dashboard's own origin. The CDN also returns **400** if `rule` is missing, so adding the scheme alone is not enough |
+| title, subtitle, VAT, photo, seller | present vs shipped only as rendered props | 87 phantom changes in one run, and every photo and seller name silently wiped — `listing` is updated in place, so that was the only copy |
+| seller type | `Dealer` vs `DEALER` (enum form only) | The column would alternate case on every flip |
 
-`normalizeVat()` and `normalizeImageUrl()` in `extract.js` canonicalise both, with regression
-tests that were each confirmed to fail when the fix is reverted. If a run ever reports an
-implausible `changed` count, group the change records by field first — that is how both were
-found. Asserting a field is merely *present* is not enough: the broken image URL satisfied
-`assert.ok(r.image)` perfectly.
+`normalizeVat()`, `normalizeImageUrl()`, `normalizeSellerEnum()` and `renderTreeFields()` in
+`extract.js` canonicalise these, with regression tests each confirmed to fail when the fix is
+reverted. Storage defends itself too: `updateListing` COALESCEs every identity column, so a
+field mobile.de did not send can never overwrite a known value, and `diff()` ignores transitions
+to or from null.
+
+If a run ever reports an implausible `changed` count, group the change records by field first —
+that is how all three were found. Asserting a field is merely *present* is not enough: the broken
+image URL satisfied `assert.ok(r.image)` perfectly, and 31 hollow listings satisfied every
+count-based guard in the scrape path.
 
 ---
 
@@ -78,12 +91,18 @@ Several independent brakes, all in `config.json` under `politeness`:
 | `minMinutesBetweenRuns` | 60 | A run that starts too soon after the last **successful** one exits without touching the network. Override with `--force`. Must stay well under the cron interval or scheduled runs silently skip. |
 | `pageDelayMs` | 7–14 s | Randomised pause between pages, so requests aren't metronomic. |
 | `settleMs` | 4–6.5 s | Wait for the payload after each navigation. |
-| `maxAttemptsPerPage` | 2 | One retry, then give up — never hammer. |
-| `blockedBackoffMs` | 45 s | Wait before that single retry. |
+| `maxAttemptsPerPage` | 1 | No retry on a block. Raising it re-enables the backoff below. |
+| `blockedBackoffMs` | 45 s | Wait before a retry, if retries are enabled at all. |
+
+A block is a verdict on the client rather than a transient error, so retrying one is worse than
+useless: Akamai answers a suspect request with a soft denial page (a 200 carrying "Zugriff
+verweigert"), and re-requesting 45 s later from the same IP escalated that to a hard 403. The
+useful next attempt is the next scheduled run, from a different runner.
 
 Plus: one browser session per run (not per page), a persistent Chrome profile so the cookie
-banner is answered once, and a lock file preventing overlapping runs. A full run is **2 page
-requests** — at the current 2-hourly cadence that's 24 requests a day.
+banner and the bot-manager trust token are kept rather than re-earned, and a lock file
+preventing overlapping runs. A full run is **2 page requests** — at the current 6-hourly
+cadence that's 8 requests a day.
 
 > mobile.de's terms prohibit automated access. This is built for low-volume personal use of a
 > search you'd otherwise refresh by hand. Keep it that way.
@@ -168,8 +187,8 @@ bundled `data.json`, so the published page and the local one can never drift.
 
 ### Things to keep an eye on
 
-- **Cron is best-effort, and this was measured, not assumed.** `17 */2 * * *` fires on even UTC
-  hours at :17 (so 02:17, 04:17 … Prague during summer time, an hour earlier in winter — cron is
+- **Cron is best-effort, and this was measured, not assumed.** `17 */6 * * *` fires at 00:17,
+  06:17, 12:17 and 18:17 UTC (Prague during summer time, an hour earlier in winter — cron is
   UTC and does not shift with DST). Observed on the first day: one slot arrived **16 minutes
   late**, and an earlier one never ran at all. Nothing is queued or logged when a slot is
   dropped, so "no run appeared" is normal rather than evidence of a fault. Give a slot at least
@@ -187,8 +206,8 @@ bundled `data.json`, so the published page and the local one can never drift.
 - **`minMinutesBetweenRuns` must stay well under the cron interval**, or runs are silently
   skipped. The two settings are coupled: a 2-hourly cron against the old 180-minute guard would
   have fired 12 times a day and actually scraped about 4, the rest exiting as "skipped" and
-  looking like success. At a 120-minute cadence the guard is 60, so a run is only dropped when
-  the previous one landed more than an hour late.
+  looking like success. At the current 360-minute cadence the guard is 60, so a scheduled run is
+  never dropped, and a manual `workflow_dispatch` an hour later still scrapes.
 - **Scheduled workflows get disabled after ~60 days of repository inactivity.** GitHub emails
   you first. The bot's own history commits may not reset that timer, so if the scraper goes
   quiet, check whether the schedule was disabled.
@@ -237,8 +256,8 @@ Append-only, so history survives a listing being deleted from mobile.de.
 | `event` | `new` / `removed` / `relisted` markers. |
 
 A snapshot is written every run even when nothing changed, so "price held steady for three
-weeks" is distinguishable from "we stopped looking". At 32 cars × 12 runs/day that's ~140k rows
-a year — nothing for SQLite.
+weeks" is distinguishable from "we stopped looking". At 32 cars × 4 runs/day that's ~47k rows a
+year — nothing for SQLite.
 
 A listing that disappears is marked `removed_at`, not deleted; if it comes back it's *relisted*,
 not re-created, so its full price history stays attached.

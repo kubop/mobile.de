@@ -87,6 +87,160 @@ function findSearchResults(haystack) {
 }
 
 /**
+ * Resolve the innermost JSON object enclosing each of `offsets`, in one forward pass.
+ *
+ * Inner objects always close before their parents, so the first closing brace that spans an
+ * offset delimits its innermost enclosing object. Offsets whose slice does not parse are
+ * dropped rather than guessed at.
+ */
+function objectsEnclosing(s, offsets) {
+  const pending = new Set(offsets);
+  const found = new Map();
+  const stack = [];
+  let inStr = false;
+  let esc = false;
+
+  for (let i = 0; i < s.length && pending.size; i++) {
+    const c = s[i];
+    if (esc) {
+      esc = false;
+      continue;
+    }
+    if (c === "\\") {
+      esc = true;
+      continue;
+    }
+    if (c === '"') {
+      inStr = !inStr;
+      continue;
+    }
+    if (inStr) continue;
+    if (c === "{") {
+      stack.push(i);
+      continue;
+    }
+    if (c !== "}") continue;
+
+    const start = stack.pop();
+    if (start === undefined) continue;
+    for (const off of pending) {
+      if (off <= start || off >= i) continue;
+      pending.delete(off);
+      try {
+        found.set(off, JSON.parse(s.slice(start, i + 1)));
+      } catch {
+        /* not a props object after all */
+      }
+    }
+  }
+  return found;
+}
+
+/** Depth-first search of an RSC node tree for the props object with a given `data-testid`. */
+function findByTestId(node, testId) {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findByTestId(child, testId);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!node || typeof node !== "object") return null;
+  if (node["data-testid"] === testId) return node;
+  return findByTestId(node.children, testId);
+}
+
+/** Flatten an RSC `children` value down to its visible text. */
+function textOf(node) {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (node && typeof node === "object") return textOf(node.children);
+  return "";
+}
+
+/**
+ * Each listing is rendered in a numbered slot — `base-result-listing-3`, plus `tic-` and `top-`
+ * for the sponsored placements. The slot's own props object carries `listingId`, and its
+ * children are suffixed from it (`base-result-listing-3-title`), which is what makes the join
+ * to a listing id exact rather than positional. Sponsored slots repeat ads, so several slots
+ * can map to one id.
+ *
+ * Both spellings are needed: React components take a camelCase `testId` prop, while plain DOM
+ * nodes get the lowercase `data-testid` attribute. The price section is a DOM node, so matching
+ * only the prop form silently finds no VAT.
+ */
+const SLOT_TESTID =
+  /"(?:testId|data-testid)":"((?:base|tic|top)-result-listing-\d+)(-[a-z-]+)?"/g;
+
+/**
+ * Recover the display fields the migrated SRP renders but no longer ships as data.
+ *
+ * mobile.de is rolling out a reworked SRP (its listing markup carries
+ * `isCosSrpMigrationVariant: true`) whose `searchResults.listings` items are down from 42 keys
+ * to 15. Title, subtitle, preview image and VAT rate are still on the page, but only as props
+ * of the rendered components — so they are read from there and merged back in, leaving
+ * normalizeListing to see the same shape either variant produces.
+ *
+ * Verified against what the older payload recorded for the same ads: the titles, the
+ * `mo-160w` image URLs and the VAT strings come out identical, which is the only way to know
+ * this repairs the data rather than inventing a second format for it.
+ *
+ * Not recoverable here: seller name and `onlineSince` sit in `$L`-referenced chunks behind
+ * build-hashed class names, and latitude/longitude are gone from the page altogether. Those
+ * keep their last known value instead — see the COALESCE in db.js's updateListing.
+ */
+function renderTreeFields(flight) {
+  const marks = [];
+  for (const m of flight.matchAll(SLOT_TESTID)) {
+    marks.push({ at: m.index, slot: m[1], suffix: m[2] ?? "" });
+  }
+  if (!marks.length) return new Map();
+
+  const objects = objectsEnclosing(
+    flight,
+    marks.map((m) => m.at),
+  );
+
+  const slotToId = new Map();
+  for (const { at, slot, suffix } of marks) {
+    if (suffix) continue;
+    const id = objects.get(at)?.listingId;
+    if (id != null) slotToId.set(slot, String(id));
+  }
+
+  // First value seen wins, so a sponsored repeat never overwrites what a real slot supplied.
+  const fill = (map, key, fields) => {
+    const cur = map.get(key) ?? {};
+    for (const [k, v] of Object.entries(fields)) if (cur[k] == null && v != null) cur[k] = v;
+    map.set(key, cur);
+  };
+
+  const bySlot = new Map();
+  for (const { at, slot, suffix } of marks) {
+    const obj = objects.get(at);
+    if (!obj) continue;
+    if (suffix === "-title") {
+      fill(bySlot, slot, { title: obj.title, subTitle: obj.subTitle, shortTitle: obj.shortTitle });
+    } else if (suffix === "-image" || suffix === "-image-large") {
+      // Listings with a thumbnail strip use `-image-large` for the preview and `-image` for
+      // none of it; `-image-thumbnail-*` carry a src too and must not be mistaken for it.
+      if (obj.src) fill(bySlot, slot, { previewImage: { src: obj.src } });
+    } else if (suffix === "-price-section") {
+      const vat = textOf(findByTestId(obj, "price-vat")?.children).trim();
+      if (vat) fill(bySlot, slot, { vat });
+    }
+  }
+
+  const byId = new Map();
+  for (const [slot, fields] of bySlot) {
+    const id = slotToId.get(slot);
+    if (id) fill(byId, id, fields);
+  }
+  return byId;
+}
+
+/**
  * Extract { numResultsTotal, listings, numPages, hasNextPage, variant } from a rendered SRP.
  * Throws on failure — a silent empty result would look identical to "every car was delisted".
  */
@@ -109,8 +263,26 @@ export function extractSearchResults(html) {
     const all = obj.listings ?? obj.items;
     const listings = all.filter(isVehicleListing);
 
+    // Only the migrated SRP needs this, and a missing title is what identifies it. The older
+    // rsc payload already carries every field, so it costs nothing there.
+    let repaired = 0;
+    if (variant === "rsc" && listings.some((l) => l.title == null)) {
+      const extra = renderTreeFields(flight);
+      for (const l of listings) {
+        const fields = extra.get(String(l.id));
+        if (!fields) continue;
+        for (const [k, v] of Object.entries(fields)) {
+          if (l[k] == null && v != null) {
+            l[k] = v;
+            repaired++;
+          }
+        }
+      }
+    }
+
     return {
       variant,
+      repairedFields: repaired,
       numResultsTotal: Number.isFinite(obj.numResultsTotal) ? obj.numResultsTotal : null,
       numPages: Number.isFinite(obj.numPages) ? obj.numPages : null,
       hasNextPage: typeof obj.hasNextPage === "boolean" ? obj.hasNextPage : null,
@@ -174,6 +346,21 @@ export function normalizeImageUrl(v) {
   // sizes are derived from it at display time.
   if (!/[?&]rule=/.test(url)) url += `${url.includes("?") ? "&" : "?"}rule=mo-160w`;
   return url;
+}
+
+/**
+ * Canonicalise a seller type.
+ *
+ * The migrated SRP dropped `st` and `contact.type` ("Dealer") and kept only the enum form
+ * ("DEALER"). The older payload carried both side by side, so the display form is recoverable
+ * exactly — which matters, because storing the enum verbatim would make the column alternate
+ * between Dealer and DEALER as the served variant flips. Only applied to the enum fallback;
+ * values that are already display strings are left alone.
+ */
+export function normalizeSellerEnum(v) {
+  const s = clean(v);
+  if (s === null || typeof s !== "string" || !s.length) return null;
+  return s[0].toUpperCase() + s.slice(1).toLowerCase();
 }
 
 export function parseInteger(s) {
@@ -280,7 +467,11 @@ export function normalizeListing(raw) {
     yearOfConstruction: parseInteger(a.yc),
     category: clean(a.c) ?? clean(raw.category),
     subCategory: clean(a.subc),
-    sellerType: clean(raw.st) ?? clean(contact.type) ?? clean(contact.typeLocalized),
+    sellerType:
+      clean(raw.st) ??
+      clean(contact.type) ??
+      clean(contact.typeLocalized) ??
+      normalizeSellerEnum(contact.enumType),
     sellerName: clean(contact.name),
     sellerId: clean(raw.sellerId) ?? null,
     country: clean(a.cn) ?? clean(contact.country),

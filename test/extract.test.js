@@ -12,14 +12,22 @@ import {
   parseOnlineSince,
   normalizeVat,
   normalizeImageUrl,
+  normalizeSellerEnum,
 } from "../src/extract.js";
 
-// mobile.de alternates between two SRP implementations; both must keep working.
-const A = "srp-2026-08-05.html"; // variant A: RSC flight payload
+// mobile.de alternates between SRP implementations; all of them must keep working.
+const A = "srp-2026-08-05.html"; // variant A: RSC flight payload, full data
 const B = "srp-legacy-2026-08-05.html"; // variant B: window.__INITIAL_STATE__
+const C = "srp-migrated-2026-08-11.html"; // variant C: reworked RSC, display fields only rendered
 const skip = skipIfMissing(A, B);
+const skipC = skipIfMissing(C);
+const skipAll = skipIfMissing(A, B, C);
 const fixture = loadFixture(A);
 const legacy = loadFixture(B);
+const migrated = loadFixture(C);
+
+/** Every variant reports itself as one of these; C is indistinguishable from A by name alone. */
+const rowsOf = (html) => dedupeById(extractSearchResults(html).listings).map(normalizeListing);
 
 test("parsePrice handles both separator styles", () => {
   assert.equal(parsePrice("€419,640"), 419640);
@@ -207,4 +215,61 @@ test("throws loudly rather than returning empty on an unusable page", () => {
     () => extractSearchResults("<html><body>Access denied</body></html>"),
     /could not extract searchResults/,
   );
+});
+
+test("normalizeSellerEnum recovers the display form of the seller type", () => {
+  // The reworked SRP kept only contact.enumType ("DEALER"). Stored verbatim it would make the
+  // column alternate Dealer/DEALER as the served variant flips.
+  assert.equal(normalizeSellerEnum("DEALER"), "Dealer");
+  assert.equal(normalizeSellerEnum("PRIVATE"), "Private");
+  assert.equal(normalizeSellerEnum("Dealer"), "Dealer", "idempotent on the display form");
+  assert.equal(normalizeSellerEnum("$undefined"), null);
+  assert.equal(normalizeSellerEnum(null), null);
+});
+
+test("the reworked SRP ships a slimmed payload that still parses", { skip: skipC }, () => {
+  const res = extractSearchResults(migrated);
+  // It is an RSC page like variant A, so `variant` alone cannot tell them apart — the tell is
+  // that searchResults no longer carries the display fields.
+  assert.equal(res.variant, "rsc");
+  assert.equal(res.numResultsTotal, 31);
+  assert.ok(res.listings.length > 0, "listings were found");
+  assert.ok(res.repairedFields > 0, "fields were recovered from the render tree");
+});
+
+test("every variant populates the display fields for every listing", { skip: skipAll }, () => {
+  // Asserts shape, not presence. This is the test the bug would have failed: variant C parsed
+  // fine and returned the right number of listings, all of them hollow. Revert the render-tree
+  // parser in extract.js and this fails on C with title/subTitle/shortTitle/image all null.
+  const REQUIRED = ["id", "url", "make", "model", "title", "shortTitle", "subTitle", "image", "sellerType", "priceEur"];
+  for (const [name, html] of [["A", fixture], ["B", legacy], ["C", migrated]]) {
+    const rows = rowsOf(html);
+    assert.ok(rows.length > 0, `${name} has listings`);
+    for (const r of rows) {
+      for (const f of REQUIRED) assert.ok(r[f] != null, `${name}: listing ${r.id} has ${f}`);
+    }
+  }
+});
+
+test("variants agree field-for-field on the ads they share", { skip: skipAll }, () => {
+  // The strongest guard against a mis-joined render tree: an off-by-one in the slot mapping
+  // would attach a neighbour's title or photo, which no per-row null check would notice.
+  // priceEur is excluded — it genuinely moved between the Aug 5 and Aug 11 captures.
+  const AGREE = ["title", "shortTitle", "subTitle", "image", "vat", "sellerType"];
+  const byId = (html) => new Map(rowsOf(html).map((r) => [String(r.id), r]));
+  const variants = { A: byId(fixture), B: byId(legacy), C: byId(migrated) };
+
+  for (const [x, y] of [["A", "C"], ["B", "C"], ["A", "B"]]) {
+    const shared = [...variants[x].keys()].filter((id) => variants[y].has(id));
+    assert.ok(shared.length >= 10, `${x} and ${y} share enough ads to compare (${shared.length})`);
+    for (const id of shared) {
+      for (const f of AGREE) {
+        assert.equal(
+          variants[x].get(id)[f] ?? null,
+          variants[y].get(id)[f] ?? null,
+          `${f} agrees between ${x} and ${y} for listing ${id}`,
+        );
+      }
+    }
+  }
 });
