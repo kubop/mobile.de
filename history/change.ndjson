@@ -29,3 +29,4 @@
 {"id":29,"listing_id":"447412024","run_id":64,"at":"2026-08-11T13:42:08.488Z","field":"vat","old_value":null,"new_value":"19% VAT"}
 {"id":30,"listing_id":"437859259","run_id":64,"at":"2026-08-11T13:42:08.488Z","field":"vat","old_value":null,"new_value":"19% VAT"}
 {"id":31,"listing_id":"433020764","run_id":64,"at":"2026-08-11T13:42:08.488Z","field":"vat","old_value":null,"new_value":"19% VAT"}
+{"id":32,"listing_id":"461076533","run_id":91,"at":"2026-08-18T13:07:23.280Z","field":"price_eur","old_value":"288950","new_value":"278950"}
