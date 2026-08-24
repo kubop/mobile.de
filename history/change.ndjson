@@ -39,3 +39,4 @@
 {"id":39,"listing_id":"452708009","run_id":115,"at":"2026-08-24T08:45:01.253Z","field":"condition","old_value":"New car","new_value":"Pre-Registration"}
 {"id":40,"listing_id":"41296778680448","run_id":115,"at":"2026-08-24T08:45:01.253Z","field":"price_eur","old_value":"299999","new_value":"289750"}
 {"id":41,"listing_id":"41296778680448","run_id":115,"at":"2026-08-24T08:45:01.253Z","field":"vat","old_value":null,"new_value":"17% VAT"}
+{"id":42,"listing_id":"41296778680448","run_id":117,"at":"2026-08-24T18:58:22.796Z","field":"price_eur","old_value":"289750","new_value":"299990"}
