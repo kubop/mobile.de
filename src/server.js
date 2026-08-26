@@ -10,8 +10,6 @@ import {
   getChanges,
   getEvents,
   getPriceHistory,
-  getMarketTimeline,
-  getMedianTimeline,
   getListingDetail,
 } from "./queries.js";
 
@@ -90,8 +88,6 @@ const server = http.createServer((req, res) => {
           changes: getChanges(db),
           events: getEvents(db),
           priceHistory: getPriceHistory(db),
-          marketTimeline: getMarketTimeline(db),
-          medianTimeline: getMedianTimeline(db),
         })),
       );
     }

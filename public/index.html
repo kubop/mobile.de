@@ -284,13 +284,13 @@
   <div class="grid2">
     <div class="card">
       <h2>Asking price</h2>
-      <div class="cap">Median and average across all listings present at each scrape.</div>
+      <div class="cap">Median and average across the listings matching your filters, at each scrape.</div>
       <div class="legend" id="medianLegend"></div>
       <div id="chartMedian"></div>
     </div>
     <div class="card">
       <h2>Listings on the market</h2>
-      <div class="cap">How many ads matched the search at each scrape.</div>
+      <div class="cap">How many matching ads were on the market at each scrape.</div>
       <div id="chartCount"></div>
     </div>
     <div class="card">
@@ -444,8 +444,10 @@
    * chart, never a second scale on this one. Pass `labels: [primary, secondary]` plus a `y2`
    * on each point, and `legendHost` so identity is never carried by colour alone.
    */
-  function lineChart(host, points, { yFmt = int, yLabel = "", tipRow = () => "", labels = null, legendHost = null }) {
-    const two = !!labels && points.some((p) => p.y2 != null);
+  function lineChart(host, points, { yFmt = int, yLabel = "", tipRow = () => "", labels = null, legendHost = null, emptyMsg = "No data yet." }) {
+    // Filtered down to a single car the average IS the median, and two lines drawn on top of
+    // each other claim a comparison that isn't there.
+    const two = !!labels && points.some((p) => p.y2 != null && p.y2 !== p.y);
     // Cleared rather than left stale when there is nothing plotted to legend.
     if (legendHost) {
       $(legendHost).replaceChildren(
@@ -458,7 +460,7 @@
       );
     }
 
-    if (points.length === 0) return emptyNote(host, "No data yet.");
+    if (points.length === 0) return emptyNote(host, emptyMsg);
     if (points.length === 1) {
       const p = points[0];
       const only = two
@@ -695,10 +697,10 @@
 
   const histByListing = new Map();
 
-  function applyFilters(rows) {
+  function applyFilters(rows, { ignorePresence = false } = {}) {
     return rows.filter((r) => {
-      if (state.includeRemoved === "active" && r.removed_at) return false;
-      if (state.includeRemoved === "removed" && !r.removed_at) return false;
+      if (!ignorePresence && state.includeRemoved === "active" && r.removed_at) return false;
+      if (!ignorePresence && state.includeRemoved === "removed" && !r.removed_at) return false;
       if (state.country && r.country !== state.country) return false;
       if (state.seller && r.seller_name !== state.seller) return false;
       if (state.condition === "used" && !((r.mileage_km ?? 0) > 1000)) return false;
@@ -818,6 +820,33 @@
     !v.length ? null
       : v.length % 2 ? v[(v.length - 1) / 2]
       : Math.round((v[v.length / 2 - 1] + v[v.length / 2]) / 2);
+
+  /**
+   * Per-run median, average and count over a chosen set of listings — the trend charts, built
+   * on the client so they answer the same filters as every other panel. A snapshot is the
+   * record of one car at one scrape and seen_at is that run's own timestamp, so grouping by it
+   * yields exactly one point per successful run: the same points the server used to send.
+   */
+  function runTimeline(ids) {
+    const byRun = new Map();
+    for (const p of DATA.priceHistory) {
+      if (!ids.has(p.listing_id)) continue;
+      const at = byRun.get(p.seen_at);
+      if (at) at.push(p.price_eur);
+      else byRun.set(p.seen_at, [p.price_eur]);
+    }
+    return [...byRun.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(([x, prices]) => {
+        prices.sort((a, b) => a - b);
+        return {
+          x,
+          y: medianOf(prices),
+          y2: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
+          n: prices.length,
+        };
+      });
+  }
 
   function renderTiles(rows) {
     const o = DATA.overview;
@@ -1313,27 +1342,29 @@
   function render() {
     const rows = applyFilters(DATA.listings);
     const visibleIds = new Set(rows.map((r) => r.id));
+    // The trend charts answer "what was on the market then", and the snapshots already record
+    // that — a car drops out of the line after its last scrape on its own. Applying the
+    // live/removed filter on top would retroactively erase removed cars from the runs they
+    // were genuinely part of, so that one filter alone is left out of them.
+    const trend = runTimeline(new Set(applyFilters(DATA.listings, { ignorePresence: true }).map((r) => r.id)));
 
     syncFilters();
     renderBanners();
     renderTiles(rows);
 
-    lineChart(
-      $("#chartMedian"),
-      DATA.medianTimeline.map((r) => ({ x: r.started_at, y: r.median_price, y2: r.avg_price, n: r.n })),
-      {
-        yFmt: eurShort,
-        yLabel: "Median and average asking price per scrape",
-        labels: ["Median", "Average"],
-        legendHost: "#medianLegend",
-        tipRow: (p) => `<br><span class="r">${p.n} listings</span>`,
-      },
-    );
-    lineChart(
-      $("#chartCount"),
-      DATA.marketTimeline.map((r) => ({ x: r.started_at, y: r.active })),
-      { yFmt: int, yLabel: "Listings on the market per scrape" },
-    );
+    lineChart($("#chartMedian"), trend, {
+      yFmt: eurShort,
+      yLabel: "Median and average asking price per scrape",
+      labels: ["Median", "Average"],
+      legendHost: "#medianLegend",
+      emptyMsg: "No listings match the current filter.",
+      tipRow: (p) => `<br><span class="r">${p.n} listings</span>`,
+    });
+    lineChart($("#chartCount"), trend.map((p) => ({ x: p.x, y: p.n })), {
+      yFmt: int,
+      yLabel: "Listings on the market per scrape",
+      emptyMsg: "No listings match the current filter.",
+    });
     scatterChart($("#chartScatter"), rows, openDrawer);
     renderFeed(visibleIds);
     renderColPicker();

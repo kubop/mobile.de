@@ -20,8 +20,6 @@ import {
   getChanges,
   getEvents,
   getPriceHistory,
-  getMarketTimeline,
-  getMedianTimeline,
   getListingDetail,
 } from "./queries.js";
 
@@ -52,8 +50,6 @@ const payload = {
   changes: getChanges(db),
   events: getEvents(db),
   priceHistory: getPriceHistory(db),
-  marketTimeline: getMarketTimeline(db),
-  medianTimeline: getMedianTimeline(db),
   // Static builds have no API to call, so per-listing detail rides along.
   details: Object.fromEntries(listings.map((l) => [l.id, getListingDetail(db, l.id)])),
 };

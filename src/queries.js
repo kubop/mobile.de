@@ -54,59 +54,12 @@ export function getListings(db) {
 export function getPriceHistory(db) {
   return db
     .prepare(
-      `SELECT listing_id, seen_at, price_eur, mileage_km
-       FROM snapshot WHERE price_eur IS NOT NULL ORDER BY listing_id, seen_at`,
-    )
-    .all();
-}
-
-/** Per-run market aggregates — the "is this market moving" chart. */
-export function getMarketTimeline(db) {
-  return db
-    .prepare(`
-      SELECT r.id AS run_id, r.started_at,
-             COUNT(s.id) AS active,
-             ROUND(AVG(s.price_eur)) AS avg_price,
-             MIN(s.price_eur) AS min_price,
-             MAX(s.price_eur) AS max_price,
-             ROUND(AVG(s.mileage_km)) AS avg_mileage
-      FROM run r
-      JOIN snapshot s ON s.run_id = r.id
-      WHERE r.status = 'ok'
-      GROUP BY r.id
-      ORDER BY r.started_at, r.id
-    `)
-    .all();
-}
-
-/** Median can't be done with AVG, so compute per-run medians in JS. */
-export function getMedianTimeline(db) {
-  const rows = db
-    .prepare(
-      `SELECT s.run_id, r.started_at, s.price_eur
+      `SELECT s.listing_id, s.seen_at, s.price_eur, s.mileage_km
        FROM snapshot s JOIN run r ON r.id = s.run_id
-       WHERE r.status='ok' AND s.price_eur IS NOT NULL
-       ORDER BY r.started_at, s.run_id, s.price_eur`,
+       WHERE r.status = 'ok' AND s.price_eur IS NOT NULL
+       ORDER BY s.listing_id, s.seen_at`,
     )
     .all();
-  const byRun = new Map();
-  for (const r of rows) {
-    if (!byRun.has(r.run_id)) byRun.set(r.run_id, { started_at: r.started_at, prices: [] });
-    byRun.get(r.run_id).prices.push(r.price_eur);
-  }
-  return [...byRun.entries()]
-    .map(([run_id, v]) => {
-      const p = v.prices;
-      const mid = Math.floor(p.length / 2);
-      return {
-        run_id,
-        started_at: v.started_at,
-        median_price: p.length % 2 ? p[mid] : Math.round((p[mid - 1] + p[mid]) / 2),
-        avg_price: Math.round(p.reduce((a, b) => a + b, 0) / p.length),
-        n: p.length,
-      };
-    })
-    .sort((a, b) => (a.started_at < b.started_at ? -1 : a.started_at > b.started_at ? 1 : a.run_id - b.run_id));
 }
 
 export function getChanges(db, limit = 400) {
