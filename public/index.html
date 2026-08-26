@@ -283,8 +283,9 @@
 
   <div class="grid2">
     <div class="card">
-      <h2>Median asking price</h2>
-      <div class="cap">Across all listings present at each scrape.</div>
+      <h2>Asking price</h2>
+      <div class="cap">Median and average across all listings present at each scrape.</div>
+      <div class="legend" id="medianLegend"></div>
       <div id="chartMedian"></div>
     </div>
     <div class="card">
@@ -437,20 +438,43 @@
    * Single-series line chart over discrete, ordered samples (our scrape runs).
    * One y-axis only — a second measure gets its own chart, never a twin axis.
    */
-  function lineChart(host, points, { yFmt = int, yLabel = "", tipRow = () => "" }) {
+  /**
+   * One or two lines sharing a single y-axis. A second series is legitimate here only because
+   * it is the same measure in the same unit as the first — a different measure needs its own
+   * chart, never a second scale on this one. Pass `labels: [primary, secondary]` plus a `y2`
+   * on each point, and `legendHost` so identity is never carried by colour alone.
+   */
+  function lineChart(host, points, { yFmt = int, yLabel = "", tipRow = () => "", labels = null, legendHost = null }) {
+    const two = !!labels && points.some((p) => p.y2 != null);
+    // Cleared rather than left stale when there is nothing plotted to legend.
+    if (legendHost) {
+      $(legendHost).replaceChildren(
+        ...(two && points.length > 1
+          ? [
+              el("span", { html: `<i style="background:var(--series-1)"></i>${esc(labels[0])}` }),
+              el("span", { html: `<i style="background:var(--series-2)"></i>${esc(labels[1])}` }),
+            ]
+          : []),
+      );
+    }
+
     if (points.length === 0) return emptyNote(host, "No data yet.");
     if (points.length === 1) {
       const p = points[0];
+      const only = two
+        ? `${yFmt(p.y)} ${labels[0].toLowerCase()} · ${yFmt(p.y2)} ${labels[1].toLowerCase()}`
+        : yFmt(p.y);
       return emptyNote(
         host,
-        `Only one scrape so far (${dshort(p.x)}: ${yFmt(p.y)}). A trend line appears from the second run onward.`,
+        `Only one scrape so far (${dshort(p.x)}: ${only}). A trend line appears from the second run onward.`,
       );
     }
 
     const { w, h, l, r, t, b } = PLOT;
     const iw = w - l - r;
     const ih = h - t - b;
-    const ys = points.map((p) => p.y);
+    // Both series share one scale, so the axis has to span both.
+    const ys = points.flatMap((p) => (two ? [p.y, p.y2] : [p.y])).filter((v) => v != null);
     const { ticks, lo, hi } = niceTicks(Math.min(...ys), Math.max(...ys), 4);
     const X = (i) => l + (points.length === 1 ? iw / 2 : (i / (points.length - 1)) * iw);
     const Y = (v) => t + ih - ((v - lo) / (hi - lo)) * ih;
@@ -473,26 +497,53 @@
       );
     }
 
-    // 2px line, no dashes
-    g.push(
-      s("path", {
-        d: points.map((p, i) => `${i ? "L" : "M"}${X(i)},${Y(p.y)}`).join(" "),
+    // 2px line, no dashes. A null lifts the pen rather than interpolating across a run that
+    // had no figure for this series.
+    const line = (get, colour) => {
+      let d = "";
+      let pen = false;
+      points.forEach((p, i) => {
+        const v = get(p);
+        if (v == null) return void (pen = false);
+        d += `${pen ? "L" : "M"}${X(i)},${Y(v)} `;
+        pen = true;
+      });
+      return s("path", {
+        d: d.trim(),
         fill: "none",
-        stroke: "var(--series-1)",
+        stroke: colour,
         "stroke-width": 2,
         "stroke-linejoin": "round",
         "stroke-linecap": "round",
-      }),
-    );
+      });
+    };
+    const SERIES = two
+      ? [{ get: (p) => p.y2, colour: "var(--series-2)" }, { get: (p) => p.y, colour: "var(--series-1)" }]
+      : [{ get: (p) => p.y, colour: "var(--series-1)" }];
+    // Secondary first: the primary series should win where they cross.
+    for (const q of SERIES) g.push(line(q.get, q.colour));
 
-    // Endpoint gets a direct label — never a number on every point.
-    const last = points[points.length - 1];
-    g.push(s("circle", { cx: X(points.length - 1), cy: Y(last.y), r: 4.5, fill: "var(--series-1)", stroke: "var(--surface-1)", "stroke-width": 2 }));
-    g.push(
-      s("text", { x: X(points.length - 1) - 8, y: Y(last.y) - 10, "text-anchor": "end", style: "fill:var(--text-primary);font-size:11px;font-weight:600" }, [
-        yFmt(last.y),
-      ]),
-    );
+    // Endpoints get a direct label — never a number on every point.
+    const ends = SERIES.map((q) => {
+      let i = points.length - 1;
+      while (i >= 0 && q.get(points[i]) == null) i--;
+      return i < 0 ? null : { ...q, i, y: Y(q.get(points[i])), v: q.get(points[i]) };
+    }).filter(Boolean);
+    for (const e of ends) {
+      g.push(s("circle", { cx: X(e.i), cy: e.y, r: 4.5, fill: e.colour, stroke: "var(--surface-1)", "stroke-width": 2 }));
+    }
+    // Two endpoints close together would print one label over the other, so the lower of the
+    // pair flips below its dot instead of above it.
+    const stacked = [...ends].sort((a, b) => a.y - b.y);
+    const collide = stacked.length === 2 && stacked[1].y - stacked[0].y < 15;
+    for (const e of stacked) {
+      const below = collide && e === stacked[1];
+      g.push(
+        s("text", { x: X(e.i) - 8, y: e.y + (below ? 16 : -10), "text-anchor": "end", style: "fill:var(--text-primary);font-size:11px;font-weight:600" }, [
+          yFmt(e.v),
+        ]),
+      );
+    }
 
     // Crosshair + tooltip: generous hit bands, not pinpoint targets.
     const cross = s("line", { class: "axisline", y1: t, y2: t + ih, opacity: 0 });
@@ -505,7 +556,9 @@
         cross.setAttribute("x1", X(i));
         cross.setAttribute("x2", X(i));
         cross.setAttribute("opacity", 0.7);
-        showTip(e, `<b>${yFmt(p.y)}</b><br><span class="r">${dt(p.x)}</span>${tipRow(p)}`);
+        showTip(e, (two
+          ? `<b>${yFmt(p.y)}</b> ${esc(labels[0].toLowerCase())} · <b>${yFmt(p.y2)}</b> ${esc(labels[1].toLowerCase())}`
+          : `<b>${yFmt(p.y)}</b>`) + `<br><span class="r">${dt(p.x)}</span>${tipRow(p)}`);
       });
       hit.addEventListener("mouseleave", () => {
         cross.setAttribute("opacity", 0);
@@ -1267,8 +1320,14 @@
 
     lineChart(
       $("#chartMedian"),
-      DATA.medianTimeline.map((r) => ({ x: r.started_at, y: r.median_price, n: r.n })),
-      { yFmt: eurShort, yLabel: "Median asking price per scrape", tipRow: (p) => `<br><span class="r">${p.n} listings</span>` },
+      DATA.medianTimeline.map((r) => ({ x: r.started_at, y: r.median_price, y2: r.avg_price, n: r.n })),
+      {
+        yFmt: eurShort,
+        yLabel: "Median and average asking price per scrape",
+        labels: ["Median", "Average"],
+        legendHost: "#medianLegend",
+        tipRow: (p) => `<br><span class="r">${p.n} listings</span>`,
+      },
     );
     lineChart(
       $("#chartCount"),

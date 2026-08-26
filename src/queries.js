@@ -102,6 +102,7 @@ export function getMedianTimeline(db) {
         run_id,
         started_at: v.started_at,
         median_price: p.length % 2 ? p[mid] : Math.round((p[mid - 1] + p[mid]) / 2),
+        avg_price: Math.round(p.reduce((a, b) => a + b, 0) / p.length),
         n: p.length,
       };
     })
