@@ -172,8 +172,18 @@
 
   /* Feed */
   .feed { max-height: 420px; overflow-y: auto; margin: -4px -6px 0; padding: 0 6px; }
-  .fitem { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  /* The negative margin cancels .feed's padding, so the hover plate reaches past the text
+     without moving it. */
+  .fitem {
+    display: flex; gap: 10px; align-items: flex-start; padding: 9px 6px; margin: 0 -6px;
+    border-bottom: 1px solid var(--border); font-size: 13px; cursor: pointer; border-radius: 6px;
+  }
   .fitem:last-child { border-bottom: 0; }
+  .fitem:hover { background: var(--plane); }
+  .fitem:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+  /* Keep the star off the text's baseline row so a two-line entry doesn't shift it. */
+  .fitem .fav { margin: -2px 0 0 auto; }
+  .fitem .when { margin-left: 0; }
   .pill {
     font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px;
     border-radius: 999px; border: 1px solid var(--border); color: var(--text-secondary);
@@ -364,6 +374,16 @@
     if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
     return `${Math.round(mins / 1440)}d ago`;
   };
+  /**
+   * How long the ad itself has been on mobile.de — `created_at` is the site's onlineSince,
+   * not our first sighting, so it reaches back before the first scrape. Unix SECONDS, unlike
+   * every other timestamp in the payload, which are ISO strings.
+   */
+  const daysListed = (r) =>
+    r?.created_at == null ? null : Math.max(0, Math.floor((Date.now() / 1000 - r.created_at) / 86400));
+  const listedOn = (ts) =>
+    ts == null ? "—" : new Date(ts * 1000).toLocaleDateString(undefined, { dateStyle: "medium" });
+
   const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   /** Human-friendly axis ticks covering [min,max]. */
@@ -740,16 +760,26 @@
     $("#banners").replaceChildren(...b);
   }
 
+  /** Median of an already-sorted numeric array. */
+  const medianOf = (v) =>
+    !v.length ? null
+      : v.length % 2 ? v[(v.length - 1) / 2]
+      : Math.round((v[v.length / 2 - 1] + v[v.length / 2]) / 2);
+
   function renderTiles(rows) {
     const o = DATA.overview;
     const prices = rows.map((r) => r.price_eur).filter((v) => v != null).sort((a, b) => a - b);
-    const median = prices.length
-      ? prices.length % 2
-        ? prices[(prices.length - 1) / 2]
-        : Math.round((prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2)
-      : null;
+    const median = medianOf(prices);
+    // Mean and median are both shown because the gap between them IS the finding: a single
+    // €600k ad drags the average well clear of the middle of the market.
+    const avg = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : null;
+    const skew = avg == null ? null : avg - median;
     const mil = rows.map((r) => r.mileage_km).filter((v) => v != null);
-    const drops = DATA.changes.filter((c) => c.field === "price_eur" && +c.new_value < +c.old_value);
+    const ages = rows.map(daysListed).filter((v) => v != null).sort((a, b) => a - b);
+    const priceChanges = DATA.changes.filter((c) => c.field === "price_eur");
+    const drops = priceChanges.filter((c) => +c.new_value < +c.old_value);
+    // A count of cuts says nothing about their size; the net is what moved the market.
+    const net = priceChanges.reduce((t, c) => t + (+c.new_value - +c.old_value), 0);
     const lastRunNew = o.lastRun?.new_count ?? 0;
     const lastRunGone = o.lastRun?.removed_count ?? 0;
 
@@ -762,9 +792,17 @@
     $("#tiles").replaceChildren(
       tile("Listings shown", String(rows.length), `${o.active} live · ${o.removed} removed · ${o.totalTracked} ever seen`),
       tile("Median price", eur(median), prices.length ? `${eur(prices[0])} – ${eur(prices[prices.length - 1])}` : ""),
+      tile("Average price", eur(avg), !prices.length ? "" : !skew
+        ? "level with the median"
+        : `${eur(Math.abs(skew))} ${skew > 0 ? "above" : "below"} median`),
       tile("Avg mileage", mil.length ? km(Math.round(mil.reduce((a, b) => a + b, 0) / mil.length)) : "—", `${mil.length} of ${rows.length} report mileage`),
+      tile("Median days listed", ages.length ? int(medianOf(ages)) : "—", ages.length
+        ? `${int(ages[0])} – ${int(ages[ages.length - 1])} days · ${ages.length} of ${rows.length} dated`
+        : ""),
       tile("New last run", String(lastRunNew), `${lastRunGone} removed`),
-      tile("Price cuts", String(drops.length), `${o.priceRises} increase(s) · ${o.runCount} scrape(s)`),
+      tile("Price cuts", String(drops.length), `${o.priceRises} increase(s)` + (net
+        ? ` · net <span class="${net < 0 ? "down" : "up"}">${net < 0 ? "−" : "+"}${eur(Math.abs(net))}</span>`
+        : "")),
     );
   }
 
@@ -930,6 +968,9 @@
     { k: "power_kw", label: "kW", num: true, fmt: (r) => int(r.power_kw) },
     { k: "seller_name", label: "Seller", cls: "name", fmt: (r) => r.seller_name ?? "—" },
     { k: "country", label: "Country", fmt: (r) => `${r.country ?? "—"}${r.location ? " · " + r.location : ""}` },
+    // Sorts on the age, not the raw timestamp, so ascending matches the number on screen.
+    { k: "created_at", label: "Listed", num: true, sortVal: daysListed,
+      fmt: (r) => (r.created_at == null ? "—" : `${int(daysListed(r))} d`) },
     { k: "first_seen_at", label: "First seen", fmt: (r) => dshort(r.first_seen_at) },
     { k: "removed_at", label: "Status", fmt: (r) => (r.removed_at ? `removed ${dshort(r.removed_at)}` : "live") },
   ];
@@ -1159,6 +1200,7 @@
       if (!visibleIds.has(e.listing_id)) continue;
       items.push({
         at: e.at, kind: e.type,
+        id: e.listing_id, name: e.sub_title || e.title || e.listing_id,
         html:
           `<span class="pill ${esc(e.type)}">${esc(e.type)}</span>` +
           `<span>${esc(e.sub_title || e.title || e.listing_id)}` +
@@ -1175,6 +1217,7 @@
       const delta = isPrice ? `<span class="${dn ? "down" : "up"}"> (${dn ? "−" : "+"}${eur(Math.abs(+c.new_value - +c.old_value)).slice(1)})</span>` : "";
       items.push({
         at: c.at, kind: "change",
+        id: c.listing_id, name: c.sub_title || c.title || c.listing_id,
         html:
           `<span class="pill">${esc(FIELD_LABEL[c.field] ?? c.field)}</span>` +
           `<span>${esc(c.sub_title || c.title || c.listing_id)}<br>` +
@@ -1188,10 +1231,26 @@
         ? "Nothing to compare yet — the first scrape is the baseline."
         : "No changes for the current filter.");
     }
+    // Each entry opens the same drawer as its table row. It is a div rather than a button
+    // because it contains one — the favourite toggle — and nesting buttons is invalid; the
+    // keydown guard is what keeps that inner button's own Enter/Space from opening the drawer.
     $("#feed").replaceChildren(
       ...items.slice(0, 200).map((i) =>
-        el("div", { class: "fitem" }, [
+        el("div", {
+          class: "fitem",
+          role: "button",
+          tabindex: "0",
+          "aria-label": `Open details: ${i.name}`,
+          onclick: () => openDrawer(i.id),
+          onkeydown: (e) => {
+            if (e.target !== e.currentTarget) return;
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            openDrawer(i.id);
+          },
+        }, [
           el("div", { html: i.html, style: "display:flex;gap:8px;flex:1" }),
+          favButton({ id: i.id, sub_title: i.name }),
           el("span", { class: "when", text: ago(i.at) }),
         ]),
       ),
@@ -1258,6 +1317,9 @@
         ["Engine", latest.cubic_capacity ? int(latest.cubic_capacity) + " ccm" : "—"],
         ["Inspection", latest.inspection ?? "—"],
         ["VAT", latest.vat ?? "—"],
+        ["Listed on mobile.de", L.created_at == null
+          ? "—"
+          : `${listedOn(L.created_at)} (${int(daysListed(L))} days)`],
         ["First seen", dt(L.first_seen_at)],
         ["Last seen", dt(L.last_seen_at)],
         ["Status", L.removed_at ? `removed ${dt(L.removed_at)}` : "live"],
