@@ -44,3 +44,5 @@
 {"id":44,"listing_id":"457798264","run_id":124,"at":"2026-08-26T13:16:26.649Z","field":"title","old_value":"McLaren 750S Spider MY27 - McLaren Milano","new_value":"McLaren 750S Spider Performance  MY27 - McLaren Milano"}
 {"id":45,"listing_id":"457798264","run_id":124,"at":"2026-08-26T13:16:26.649Z","field":"sub_title","old_value":"Spider MY27 - McLaren Milano","new_value":"Spider Performance  MY27 - McLaren Milano"}
 {"id":46,"listing_id":"457798264","run_id":124,"at":"2026-08-26T13:16:26.649Z","field":"price_eur","old_value":"358000","new_value":"349000"}
+{"id":47,"listing_id":"449930051","run_id":125,"at":"2026-08-26T20:01:15.508Z","field":"price_eur","old_value":"329750","new_value":"317750"}
+{"id":48,"listing_id":"449930051","run_id":125,"at":"2026-08-26T20:01:15.508Z","field":"vat","old_value":null,"new_value":"19% VAT"}
