@@ -47,3 +47,4 @@
 {"id":47,"listing_id":"449930051","run_id":125,"at":"2026-08-26T20:01:15.508Z","field":"price_eur","old_value":"329750","new_value":"317750"}
 {"id":48,"listing_id":"449930051","run_id":125,"at":"2026-08-26T20:01:15.508Z","field":"vat","old_value":null,"new_value":"19% VAT"}
 {"id":49,"listing_id":"437813261","run_id":126,"at":"2026-08-27T07:53:48.470Z","field":"mileage_km","old_value":"18000","new_value":"19973"}
+{"id":50,"listing_id":"38508149293152","run_id":128,"at":"2026-08-27T22:15:13.756Z","field":"price_eur","old_value":"374979","new_value":"372317"}
