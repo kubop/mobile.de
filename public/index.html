@@ -192,6 +192,13 @@
   .pill.new { color: var(--good); border-color: var(--good); }
   .pill.removed { color: var(--critical); border-color: var(--critical); }
   .fitem .when { color: var(--muted); font-size: 11px; white-space: nowrap; margin-left: auto; }
+  /* When one car changes several fields in a single run it renders as one entry: a label
+     column beside each old → new line, so the rows read as one edit rather than several cars. */
+  .chgs { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin-top: 3px; }
+  .fld {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); padding-top: 2px; white-space: nowrap;
+  }
   .down { color: var(--good); font-weight: 600; }
   .up { color: var(--critical); font-weight: 600; }
 
@@ -1276,6 +1283,16 @@
     return String(v);
   };
 
+  /** One "old → new" line, carrying the signed delta when the field is a price. */
+  function changeLine(c) {
+    const isPrice = c.field === "price_eur";
+    const dn = isPrice && +c.new_value < +c.old_value;
+    const delta = isPrice
+      ? `<span class="${dn ? "down" : "up"}"> (${dn ? "−" : "+"}${eur(Math.abs(+c.new_value - +c.old_value)).slice(1)})</span>`
+      : "";
+    return `${esc(fmtChange(c.field, c.old_value))} → <b>${esc(fmtChange(c.field, c.new_value))}</b>${delta}`;
+  }
+
   function renderFeed(visibleIds) {
     const items = [];
     for (const e of DATA.events) {
@@ -1290,20 +1307,33 @@
           `<br><span class="sub">${esc(e.seller_name ?? "")}</span></span>`,
       });
     }
+    // A run often moves several fields of the same car at once — a re-titled ad usually
+    // restates its trim and price too. Keyed by car and run, that lands as one entry instead of
+    // three consecutive rows that look like three different cars.
+    const groups = new Map();
     for (const c of DATA.changes) {
       if (!visibleIds.has(c.listing_id)) continue;
-      const isPrice = c.field === "price_eur";
-      const dn = isPrice && +c.new_value < +c.old_value;
-      const from = fmtChange(c.field, c.old_value);
-      const to = fmtChange(c.field, c.new_value);
-      const delta = isPrice ? `<span class="${dn ? "down" : "up"}"> (${dn ? "−" : "+"}${eur(Math.abs(+c.new_value - +c.old_value)).slice(1)})</span>` : "";
+      const key = `${c.listing_id}|${c.run_id ?? c.at}`;
+      let g = groups.get(key);
+      if (!g) groups.set(key, (g = { at: c.at, id: c.listing_id, name: c.sub_title || c.title || c.listing_id, rows: [] }));
+      if (c.at > g.at) g.at = c.at;
+      g.rows.push(c);
+    }
+    for (const g of groups.values()) {
+      // Ascending id is the order the fields were recorded in, which is stabler across runs
+      // than the feed's own newest-first ordering.
+      g.rows.sort((a, b) => a.id - b.id);
+      const label = (c) => esc(FIELD_LABEL[c.field] ?? c.field);
+      const many = g.rows.length > 1;
       items.push({
-        at: c.at, kind: "change",
-        id: c.listing_id, name: c.sub_title || c.title || c.listing_id,
+        at: g.at, kind: "change", id: g.id, name: g.name,
         html:
-          `<span class="pill">${esc(FIELD_LABEL[c.field] ?? c.field)}</span>` +
-          `<span>${esc(c.sub_title || c.title || c.listing_id)}<br>` +
-          `<span class="sub">${esc(from)} → <b>${esc(to)}</b>${delta}</span></span>`,
+          `<span class="pill">${many ? `${g.rows.length} edits` : label(g.rows[0])}</span>` +
+          `<span>${esc(g.name)}` +
+          (many
+            ? `<span class="chgs">${g.rows.map((c) => `<span class="fld">${label(c)}</span><span class="sub">${changeLine(c)}</span>`).join("")}</span>`
+            : `<br><span class="sub">${changeLine(g.rows[0])}</span>`) +
+          `</span>`,
       });
     }
     items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
