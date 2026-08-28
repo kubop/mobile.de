@@ -75,12 +75,30 @@ jobs:
       #
       # actions/cache never overwrites an existing key, so each run saves under its own run id
       # and restores whichever previous one is newest.
+      #
+      # The cached path is a plain `chrome-cookies/` staged by hand rather than the profile
+      # directory itself. actions/cache resolves `path` through a glob, and pointing it at the
+      # dot-directory `.chrome-profile/...` cached nothing at all: a path that resolves to
+      # nothing is a warning, not a failure, so the job stayed green while no `chrome-cookies-*`
+      # cache was ever written. Every run from 2026-08-11 to 2026-08-28 therefore reached
+      # mobile.de cookie-less, which is the state Akamai challenges — run #129 is the one it
+      # denied.
       - name: Restore Chrome cookie store
         uses: actions/cache/restore@v4
         with:
-          path: .chrome-profile/Default/Network
+          path: chrome-cookies
           key: chrome-cookies-${{ github.run_id }}
           restore-keys: chrome-cookies-
+
+      - name: Load the restored cookies into the profile
+        run: |
+          if [ -f chrome-cookies/Cookies ]; then
+            mkdir -p .chrome-profile/Default/Network
+            cp -a chrome-cookies/. .chrome-profile/Default/Network/
+            echo "restored cookie store ($(stat -c%s chrome-cookies/Cookies) bytes)"
+          else
+            echo "::warning::no cached cookie store — this run starts cold and may be denied"
+          fi
 
       - name: Scrape
         id: scrape
@@ -100,13 +118,43 @@ jobs:
 
       # Only after a success. A denied run's `_abck` carries Akamai's rejection, so keeping it
       # would hand the next run a token already known to fail rather than a clean slate.
-      # The hashFiles guard matters for a run the minimum-interval guard skipped: no browser was
-      # launched, so there is no profile to save and cache/save would fail on the missing path.
+      #
+      # A cache is only worth having if you can see it working, so this prints what it found
+      # instead of hiding the decision in a hashFiles() guard that silently evaluated to
+      # nothing for seventeen days.
+      - name: Stage the cookie store for caching
+        id: cookies
+        if: always() && steps.scrape.outputs.scraped == 'true'
+        run: |
+          src=.chrome-profile/Default/Network/Cookies
+          if [ ! -f "$src" ]; then
+            # Normal for a run the minimum-interval guard skipped: no browser was ever launched.
+            echo "no cookie store at $src — nothing to cache"
+            exit 0
+          fi
+          # A store with zero rows is the failure this whole mechanism exists to avoid: it looks
+          # like a cache hit to the next run while carrying no trust token at all. That is what
+          # keepProfile persisted before browser.js learned to shut Chrome down gracefully.
+          rows=$(node --experimental-sqlite --no-warnings -e '
+            const { DatabaseSync } = require("node:sqlite");
+            const db = new DatabaseSync(process.argv[1], { readOnly: true });
+            process.stdout.write(String(db.prepare("SELECT COUNT(*) AS n FROM cookies").get().n));
+          ' "$src" 2>/dev/null || echo 0)
+          echo "cookie store: $(stat -c%s "$src") bytes, $rows rows"
+          if [ "$rows" -eq 0 ]; then
+            echo "::warning::cookie store has no rows — refusing to cache an empty token"
+            exit 0
+          fi
+          rm -rf chrome-cookies
+          mkdir -p chrome-cookies
+          cp -a .chrome-profile/Default/Network/. chrome-cookies/
+          echo "save=true" >> "$GITHUB_OUTPUT"
+
       - name: Save Chrome cookie store
-        if: always() && steps.scrape.outputs.scraped == 'true' && hashFiles('.chrome-profile/Default/Network/Cookies') != ''
+        if: always() && steps.cookies.outputs.save == 'true'
         uses: actions/cache/save@v4
         with:
-          path: .chrome-profile/Default/Network
+          path: chrome-cookies
           key: chrome-cookies-${{ github.run_id }}
 
       - name: Export history

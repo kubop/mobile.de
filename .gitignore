@@ -10,3 +10,4 @@ probe-debug/
 # it skip when it is absent — see test/fixtures.js for how to capture your own.
 test/fixtures/*.html
 dist/
+chrome-cookies/

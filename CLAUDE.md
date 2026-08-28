@@ -82,11 +82,19 @@ the cookies it sets: `_abck` (a **one-year** trust token), `bm_s`, `bm_so`, `bm_
 - **Volume is the lever that matters.** Two thirds of runs were being denied at 12 runs a day
   against a path `robots.txt` disallows; the cron is 6-hourly now.
 
-CI caches only `.chrome-profile/Default/Network` — a whole profile is ~130 MB of model and
-metrics data Chrome recreates anyway — and saves it only after a successful scrape, so a token
-carrying Akamai's rejection is never handed to the next run. `--password-store=basic` on Linux
-pins cookie encryption to Chrome's built-in key; without it the store is encrypted per-machine
-and moving it between runners silently achieves nothing.
+CI caches only the cookie store — a whole profile is ~130 MB of model and metrics data Chrome
+recreates anyway — and saves it only after a successful scrape, so a token carrying Akamai's
+rejection is never handed to the next run. `--password-store=basic` on Linux pins cookie
+encryption to Chrome's built-in key; without it the store is encrypted per-machine and moving it
+between runners silently achieves nothing.
+
+The cached path is a plain `chrome-cookies/`, staged by copying the store in and out, and **not**
+`.chrome-profile/Default/Network` directly. Pointing `actions/cache` at that dot-directory cached
+nothing at all: a `path` that resolves to nothing is a warning, not a failure, so the job stayed
+green while no cache was ever written. It went unnoticed from 2026-08-11 to 2026-08-28 — thirty-odd
+runs, every one of them arriving cookie-less, which is the state Akamai challenges. A cache is
+only worth having if you can see it working, so the save step prints the store's size and row
+count and refuses to cache a store with zero rows.
 
 ### Two page variants, and the bug class they cause
 
