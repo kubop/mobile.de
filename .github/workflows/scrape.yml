@@ -76,15 +76,14 @@ jobs:
       # actions/cache never overwrites an existing key, so each run saves under its own run id
       # and restores whichever previous one is newest.
       #
-      # No `chrome-cookies-*` cache was written once between 2026-08-11 and 2026-09-01 — every
-      # run in that window reached mobile.de cookie-less, which is the state Akamai challenges.
-      # The cause was not actions/cache: `.chrome-profile/Default/Network/Cookies` simply does
-      # not exist on the runner after a scrape, so the old `hashFiles()` guard was reporting the
-      # truth. Chrome's profile layout differs from the Windows one this path was written
-      # against. Hence: locate the store rather than assume it, and record where it was found so
-      # the restore puts it back in the same place. A missing path is a warning and not a
-      # failure, so this stayed green and silent for three weeks — which is why both steps now
-      # say out loud what they found.
+      # **On the runner Chrome keeps its cookies at `Default/Cookies`, not
+      # `Default/Network/Cookies`.** That second path is the Windows layout, and hardcoding it
+      # meant no `chrome-cookies-*` cache was written once between 2026-08-11 and 2026-09-01 —
+      # every run in that window reached mobile.de as a first-time client, which is the state
+      # Akamai challenges. actions/cache and `hashFiles()` were both reporting the truth; a path
+      # that resolves to nothing is a warning rather than a failure, so it stayed green and
+      # silent for three weeks. Hence: locate the store, record where it was found so the restore
+      # puts it back there, and have both steps say out loud what they saw.
       - name: Restore Chrome cookie store
         uses: actions/cache/restore@v4
         with:
@@ -131,7 +130,10 @@ jobs:
         # either way; only the caching itself is gated on success.
         if: always()
         run: |
-          found=$(find .chrome-profile -name Cookies -type f 2>/dev/null | head -1)
+          # Newest wins: both layouts can exist in one profile (Chrome 96 moved the store to
+          # Default/Network/ and leaves the old file behind when it migrates), and the live one
+          # is whichever was written last. Picking by find(1) order would be a coin toss.
+          found=$(find .chrome-profile -name Cookies -type f -exec ls -t {} + 2>/dev/null | head -1)
           if [ -z "$found" ]; then
             echo "::warning::no Chrome cookie store anywhere under .chrome-profile"
             find .chrome-profile -maxdepth 2 2>/dev/null | head -30 || echo "(no .chrome-profile at all)"

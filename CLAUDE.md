@@ -88,12 +88,14 @@ rejection is never handed to the next run. `--password-store=basic` on Linux pin
 encryption to Chrome's built-in key; without it the store is encrypted per-machine and moving it
 between runners silently achieves nothing.
 
-**The cookie store is not at `.chrome-profile/Default/Network/Cookies` on a Linux runner.** That
-path was written against the Windows profile layout, and assuming it meant no cache was written
-once between 2026-08-11 and 2026-09-01 — every run in that window arrived cookie-less, which is
-the state Akamai challenges. `actions/cache` and `hashFiles()` were both reporting the truth: a
-`path` that resolves to nothing is a warning, not a failure, so the job stayed green and silent
-for three weeks.
+**On a Linux runner Chrome keeps its cookies at `.chrome-profile/Default/Cookies`, not
+`Default/Network/Cookies`.** The latter is the Windows layout (Chrome 96 moved the store into
+`Network/`; a fresh Linux profile here still uses the old location). Hardcoding it meant no cache
+was written once between 2026-08-11 and 2026-09-01 — every run in that window arrived
+cookie-less, which is the state Akamai challenges. `actions/cache` and `hashFiles()` were both
+reporting the truth: a `path` that resolves to nothing is a warning, not a failure, so the job
+stayed green and silent for three weeks. Confirmed from a run that printed
+`cookie store at .chrome-profile/Default/Cookies — 28672 bytes, 7 rows`.
 
 So the workflow **locates** the store (`find .chrome-profile -name Cookies`) rather than assuming
 it, caches it as a plain `chrome-cookies/`, and records the path it was found at so the restore
