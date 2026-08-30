@@ -73,8 +73,7 @@ the cookies it sets: `_abck` (a **one-year** trust token), `bm_s`, `bm_so`, `bm_
   shutdown, and `browser.close()` merely detaches a CDP connection — on a browser we attached to
   rather than launched, the process keeps running. `close()` therefore sends CDP `Browser.close`
   and waits, killing only as a backstop. Before that, `keepProfile: true` was persisting a cookie
-  store with **zero** rows: every run re-earned trust from cold, which is the state that gets
-  challenged.
+  store with **zero** rows. It works: a denied CI run still ends with 7 rows on disk.
 - **A block must not be retried.** Akamai answers a suspect request with a soft denial — a 200
   whose title is "Zugriff verweigert" — and re-requesting from the same IP 45 s later escalates
   it to a hard 403. `maxAttemptsPerPage` is 1 for that reason. `detectBlock()` checks status
@@ -92,7 +91,7 @@ between runners silently achieves nothing.
 `Default/Network/Cookies`.** The latter is the Windows layout (Chrome 96 moved the store into
 `Network/`; a fresh Linux profile here still uses the old location). Hardcoding it meant no cache
 was written once between 2026-08-11 and 2026-09-01 — every run in that window arrived
-cookie-less, which is the state Akamai challenges. `actions/cache` and `hashFiles()` were both
+cookie-less. `actions/cache` and `hashFiles()` were both
 reporting the truth: a `path` that resolves to nothing is a warning, not a failure, so the job
 stayed green and silent for three weeks. Confirmed from a run that printed
 `cookie store at .chrome-profile/Default/Cookies — 28672 bytes, 7 rows`.
@@ -102,6 +101,24 @@ it, caches it as a plain `chrome-cookies/`, and records the path it was found at
 puts it back in the same place. A cache is only worth having if you can see it working, so both
 steps print what they found, the save refuses a store with zero rows, and the staging step runs
 even on a denied scrape — where Chrome put its profile is worth knowing either way.
+
+**Cold-start is not what gets a run denied, and the three weeks of broken cache are the proof.**
+All 140 runs to 2026-09-01 went out cookie-less and 130 of them succeeded — a 7% block rate with
+no token at all. Any claim that arriving cold is "the state Akamai challenges" is therefore
+untested folklore; treat the cookie cache as an experiment, not a fix.
+
+It may even cut the other way. Every job draws a fresh address from the ~28 million GitHub
+publishes for Actions, so a reused `_abck` is always presented from an IP that did not earn it,
+and a token bound to network context reads as replay. The cookie lifetimes sharpen this: at a
+6-hourly cadence `ak_bmsc` (2 h), `bm_sv` (2 h) and `bm_sz` (4 h) are all dead before the next
+run, so what actually crosses is essentially `_abck` alone — the long-lived one, and the one most
+likely to be bound.
+
+So the workflow does not bet either way: **a token that was restored and then blocked is
+deleted**, and the next run starts cold. That needs `actions: write`. Only an actual denial
+counts — a runner whose Chrome failed to start says nothing about the cookies — so the step greps
+`scrape.out` for `blocked by mobile.de` before touching anything. If reuse is harmful the system
+finds out on its own; if it helps, the cache simply persists.
 
 ### Two page variants, and the bug class they cause
 

@@ -36,6 +36,7 @@ permissions:
   contents: write # commit the new history
   pages: write # publish the dashboard
   id-token: write # required by deploy-pages
+  actions: write # delete a cached token that turned out to be unwelcome
 
 # Never let two scrapes overlap; a queued one waits rather than doubling up on requests.
 concurrency:
@@ -85,6 +86,7 @@ jobs:
       # silent for three weeks. Hence: locate the store, record where it was found so the restore
       # puts it back there, and have both steps say out loud what they saw.
       - name: Restore Chrome cookie store
+        id: restore
         uses: actions/cache/restore@v4
         with:
           path: chrome-cookies
@@ -169,6 +171,34 @@ jobs:
         with:
           path: chrome-cookies
           key: chrome-cookies-${{ github.run_id }}
+
+      # Every runner gets a different address out of the ~28 million GitHub publishes for
+      # Actions, so a reused `_abck` is always presented from an IP that did not earn it. If
+      # Akamai binds that token to network context, replaying it scores worse than arriving
+      # cold — and cold demonstrably works, since every run up to 2026-09-01 was cookie-less
+      # and 93% of them succeeded.
+      #
+      # Rather than guess which way it cuts, let the run say so: a token that was restored and
+      # then blocked is a token worth throwing away. Only for an actual denial — a runner whose
+      # Chrome failed to start says nothing about the cookies.
+      - name: Drop the cached token after a denial
+        if: always() && steps.scrape.outputs.scraped != 'true' && steps.restore.outputs.cache-matched-key != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! grep -q "blocked by mobile.de" scrape.out 2>/dev/null; then
+            echo "failure was not a block — keeping the cached token"
+            exit 0
+          fi
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100"                   --jq '.actions_caches[] | select(.key|startswith("chrome-cookies-")) | .id' || true)
+          if [ -z "$ids" ]; then
+            echo "no chrome-cookies caches to drop"
+            exit 0
+          fi
+          for id in $ids; do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" >/dev/null               && echo "dropped cache $id" || echo "could not drop cache $id"
+          done
+          echo "::warning::denied while presenting a restored token — dropped it so the next run starts cold"
 
       - name: Export history
         # Runs even on failure: a failed run is still recorded in the `run` table, and keeping
