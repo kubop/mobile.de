@@ -52,15 +52,19 @@ function releaseLock() {
  * A block is a verdict on the client, not a transient error, so the useful next attempt is the
  * next scheduled run on a fresh runner. Raising this again re-enables the backoff path.
  */
-async function fetchPage(page, cfg, pageNo) {
+async function fetchPage(page, cfg, pageNo, referer) {
   const url = searchUrlForPage(cfg.searchUrl, pageNo);
   const maxAttempts = cfg.politeness?.maxAttemptsPerPage ?? 1;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     log(`page ${pageNo}: GET${attempt > 1 ? ` (attempt ${attempt})` : ""}`);
+    // Playwright sends no Referer on a bare goto(), so a page-2 request would arrive looking
+    // like someone who typed a paginated search URL by hand. Pass the page we actually came
+    // from, which is what a browser would have sent anyway.
     const resp = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: cfg.politeness?.navTimeoutMs ?? 60000,
+      ...(referer ? { referer } : {}),
     });
     const status = resp?.status() ?? 0;
 
@@ -111,6 +115,45 @@ async function fetchPage(page, cfg, pageNo) {
 }
 
 /**
+ * Land on the site the way a person does, before touching the search.
+ *
+ * The scraper used to open `suchen.mobile.de/fahrzeuge/search.html?...` cold as its very first
+ * request: no Referer, no cookies, straight at a path `robots.txt` disallows. Akamai sets its
+ * `_abck` and `bm_*` cookies from a sensor script that runs on an ordinary page, so arriving
+ * that way meant every fetch of the search was made by a client that had never been anywhere
+ * else on the site — which is exactly the shape it challenges.
+ *
+ * One extra request per run buys a normal entry point and a real Referer for the search.
+ * Never fatal: if the homepage itself is denied the search will be too, and letting the run
+ * continue keeps the error message about the page we actually care about.
+ */
+async function warmUp(page, cfg) {
+  const url = cfg.warmUpUrl;
+  if (!url) return null;
+  try {
+    log(`warm-up: GET ${url}`);
+    const resp = await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: cfg.politeness?.navTimeoutMs ?? 60000,
+    });
+    const status = resp?.status() ?? 0;
+    await sleep(jitter(cfg.politeness?.settleMs ?? [4000, 6500]));
+    // Accepting consent here rather than on the search page means the choice is already made
+    // when the payload we actually parse is rendered.
+    await dismissConsent(page, log).catch(() => false);
+    const blocked = detectBlock(status, await page.content(), await page.title().catch(() => ""));
+    log(`  HTTP ${status}${blocked ? ` — ${blocked}` : ""}`);
+    if (blocked) return null;
+    // A person reads the landing page before searching.
+    await sleep(jitter(cfg.politeness?.warmUpDwellMs ?? [3000, 7000]));
+    return url;
+  } catch (e) {
+    log(`  warm-up failed (${e.message.slice(0, 120)}) — continuing to the search`);
+    return null;
+  }
+}
+
+/**
  * Walk pages until we've collected every result. Page size is never assumed — sponsored slots
  * repeat ads, so counting rows would undercount. We stop on whichever comes first:
  * hasNextPage=false, page >= numPages, the reported total covered, a page that adds nothing
@@ -125,6 +168,10 @@ async function collectAll(page, cfg) {
   let pagesFetched = 0;
   let complete = false;
 
+  // Whatever we last navigated to becomes the Referer for the next hop: the homepage for
+  // page 1, page N-1 for page N.
+  let referer = await warmUp(page, cfg);
+
   for (let p = 1; p <= maxPages; p++) {
     if (p > 1) {
       const d = jitter(cfg.politeness?.pageDelayMs ?? [7000, 14000]);
@@ -132,7 +179,8 @@ async function collectAll(page, cfg) {
       await sleep(d);
     }
 
-    const res = await fetchPage(page, cfg, p);
+    const res = await fetchPage(page, cfg, p, referer);
+    referer = searchUrlForPage(cfg.searchUrl, p);
     pagesFetched++;
     if (p === 1) {
       numResultsTotal = res.numResultsTotal;

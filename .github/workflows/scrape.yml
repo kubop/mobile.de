@@ -76,13 +76,15 @@ jobs:
       # actions/cache never overwrites an existing key, so each run saves under its own run id
       # and restores whichever previous one is newest.
       #
-      # The cached path is a plain `chrome-cookies/` staged by hand rather than the profile
-      # directory itself. actions/cache resolves `path` through a glob, and pointing it at the
-      # dot-directory `.chrome-profile/...` cached nothing at all: a path that resolves to
-      # nothing is a warning, not a failure, so the job stayed green while no `chrome-cookies-*`
-      # cache was ever written. Every run from 2026-08-11 to 2026-08-28 therefore reached
-      # mobile.de cookie-less, which is the state Akamai challenges — run #129 is the one it
-      # denied.
+      # No `chrome-cookies-*` cache was written once between 2026-08-11 and 2026-09-01 — every
+      # run in that window reached mobile.de cookie-less, which is the state Akamai challenges.
+      # The cause was not actions/cache: `.chrome-profile/Default/Network/Cookies` simply does
+      # not exist on the runner after a scrape, so the old `hashFiles()` guard was reporting the
+      # truth. Chrome's profile layout differs from the Windows one this path was written
+      # against. Hence: locate the store rather than assume it, and record where it was found so
+      # the restore puts it back in the same place. A missing path is a warning and not a
+      # failure, so this stayed green and silent for three weeks — which is why both steps now
+      # say out loud what they found.
       - name: Restore Chrome cookie store
         uses: actions/cache/restore@v4
         with:
@@ -92,13 +94,17 @@ jobs:
 
       - name: Load the restored cookies into the profile
         run: |
-          if [ -f chrome-cookies/Cookies ]; then
-            mkdir -p .chrome-profile/Default/Network
-            cp -a chrome-cookies/. .chrome-profile/Default/Network/
-            echo "restored cookie store ($(stat -c%s chrome-cookies/Cookies) bytes)"
-          else
+          if [ ! -f chrome-cookies/Cookies ]; then
             echo "::warning::no cached cookie store — this run starts cold and may be denied"
+            exit 0
           fi
+          # The cache records where Chrome actually kept the store, because that path is not
+          # the same everywhere and hardcoding it is what broke this for three weeks.
+          dest=$(cat chrome-cookies/path 2>/dev/null || echo .chrome-profile/Default/Network/Cookies)
+          mkdir -p "$(dirname "$dest")"
+          cp -a chrome-cookies/Cookies "$dest"
+          [ -f chrome-cookies/Cookies-journal ] && cp -a chrome-cookies/Cookies-journal "$dest-journal"
+          echo "restored cookie store into $dest ($(stat -c%s "$dest") bytes)"
 
       - name: Scrape
         id: scrape
@@ -116,20 +122,19 @@ jobs:
             exit 1
           fi
 
-      # Only after a success. A denied run's `_abck` carries Akamai's rejection, so keeping it
-      # would hand the next run a token already known to fail rather than a clean slate.
-      #
-      # A cache is only worth having if you can see it working, so this prints what it found
-      # instead of hiding the decision in a hashFiles() guard that silently evaluated to
-      # nothing for seventeen days.
+      # Cached only after a success. A denied run's `_abck` carries Akamai's rejection, so
+      # keeping it would hand the next run a token already known to fail rather than a clean
+      # slate.
       - name: Stage the cookie store for caching
         id: cookies
-        if: always() && steps.scrape.outputs.scraped == 'true'
+        # Runs even on a denied scrape, because where Chrome put its profile is worth knowing
+        # either way; only the caching itself is gated on success.
+        if: always()
         run: |
-          src=.chrome-profile/Default/Network/Cookies
-          if [ ! -f "$src" ]; then
-            # Normal for a run the minimum-interval guard skipped: no browser was ever launched.
-            echo "no cookie store at $src — nothing to cache"
+          found=$(find .chrome-profile -name Cookies -type f 2>/dev/null | head -1)
+          if [ -z "$found" ]; then
+            echo "::warning::no Chrome cookie store anywhere under .chrome-profile"
+            find .chrome-profile -maxdepth 2 2>/dev/null | head -30 || echo "(no .chrome-profile at all)"
             exit 0
           fi
           # A store with zero rows is the failure this whole mechanism exists to avoid: it looks
@@ -139,15 +144,21 @@ jobs:
             const { DatabaseSync } = require("node:sqlite");
             const db = new DatabaseSync(process.argv[1], { readOnly: true });
             process.stdout.write(String(db.prepare("SELECT COUNT(*) AS n FROM cookies").get().n));
-          ' "$src" 2>/dev/null || echo 0)
-          echo "cookie store: $(stat -c%s "$src") bytes, $rows rows"
+          ' "$found" 2>/dev/null || echo 0)
+          echo "cookie store at $found — $(stat -c%s "$found") bytes, $rows rows"
+          if [ "${{ steps.scrape.outputs.scraped }}" != "true" ]; then
+            echo "scrape did not succeed — not caching this run's token"
+            exit 0
+          fi
           if [ "$rows" -eq 0 ]; then
             echo "::warning::cookie store has no rows — refusing to cache an empty token"
             exit 0
           fi
           rm -rf chrome-cookies
           mkdir -p chrome-cookies
-          cp -a .chrome-profile/Default/Network/. chrome-cookies/
+          cp -a "$found" chrome-cookies/Cookies
+          [ -f "$found-journal" ] && cp -a "$found-journal" chrome-cookies/Cookies-journal
+          echo "$found" > chrome-cookies/path
           echo "save=true" >> "$GITHUB_OUTPUT"
 
       - name: Save Chrome cookie store

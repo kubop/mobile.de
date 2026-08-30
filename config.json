@@ -4,9 +4,13 @@
 
   "maxPages": 8,
 
+  "// warmUpUrl": "Landed on before the search, so the search is not the session's first request. Set null to skip.",
+  "warmUpUrl": "https://www.mobile.de/",
+
   "politeness": {
     "minMinutesBetweenRuns": 60,
     "pageDelayMs": [7000, 14000],
+    "warmUpDwellMs": [3000, 7000],
     "settleMs": [4000, 6500],
     "navTimeoutMs": 60000,
     "maxAttemptsPerPage": 1,
