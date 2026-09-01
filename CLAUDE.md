@@ -80,6 +80,14 @@ the cookies it sets: `_abck` (a **one-year** trust token), `bm_s`, `bm_so`, `bm_
   before content, so a `denial page (title)` in the log means the status was *not* 403.
 - **Volume is the lever that matters.** Two thirds of runs were being denied at 12 runs a day
   against a path `robots.txt` disallows; the cron is 6-hourly now.
+- **"Wait for the block to clear" is vaguer than it sounds.** Every job draws a different address
+  from the ~28 million GitHub publishes for Actions, so consecutive denials are not one IP being
+  punished. What is actually constant across runs is the *network reputation of the range* — which
+  other people's traffic moves as much as yours — and the *client*: same Chrome build, same flags,
+  same 1440x900 xvfb screen, same CDP attachment, same two-page pattern. Re-running by hand
+  neither helps nor obviously hurts; it mostly re-samples a score you do not control. The one
+  documented escalation is retrying the same IP *within a run*, which is why `maxAttemptsPerPage`
+  is 1.
 
 CI caches only the cookie store — a whole profile is ~130 MB of model and metrics data Chrome
 recreates anyway — and saves it only after a successful scrape, so a token carrying Akamai's
@@ -96,11 +104,23 @@ reporting the truth: a `path` that resolves to nothing is a warning, not a failu
 stayed green and silent for three weeks. Confirmed from a run that printed
 `cookie store at .chrome-profile/Default/Cookies — 28672 bytes, 7 rows`.
 
-So the workflow **locates** the store (`find .chrome-profile -name Cookies`) rather than assuming
-it, caches it as a plain `chrome-cookies/`, and records the path it was found at so the restore
-puts it back in the same place. A cache is only worth having if you can see it working, so both
-steps print what they found, the save refuses a store with zero rows, and the staging step runs
-even on a denied scrape — where Chrome put its profile is worth knowing either way.
+So the workflow caches a `chrome-state/` that **mirrors the profile's own layout**, which makes
+the Windows/Linux split irrelevant: restoring is `cp -a chrome-state/. .chrome-profile/`. It
+carries `Default/Cookies`, `Default/Network`, `Default/Local Storage`, `Default/History` and
+`Default/Preferences` — about 350 KB.
+
+Cookies alone were not enough, and were arguably worse than nothing: a profile that presents
+`bm_lso` (Akamai's local-storage marker) while its localStorage is empty, with a History showing
+it has never been to the site, is in a state no real returning visitor is ever in. Carry the
+consistent set or none of it.
+
+**`Service Worker` is deliberately excluded.** It is the largest part by far, and a stale worker
+can serve a cached page instead of the live one — which would poison the scrape with yesterday's
+listings and look like a data bug, not a caching one.
+
+A cache is only worth having if you can see it working, so both steps print what they found, the
+save refuses a store with zero rows, and the staging step runs even on a denied scrape — where
+Chrome put its profile is worth knowing either way.
 
 **Cold-start is not what gets a run denied, and the three weeks of broken cache are the proof.**
 All 140 runs to 2026-09-01 went out cookie-less and 130 of them succeeded — a 7% block rate with
@@ -114,11 +134,11 @@ and a token bound to network context reads as replay. The cookie lifetimes sharp
 run, so what actually crosses is essentially `_abck` alone — the long-lived one, and the one most
 likely to be bound.
 
-So the workflow does not bet either way: **a token that was restored and then blocked is
-deleted**, and the next run starts cold. That needs `actions: write`. Only an actual denial
-counts — a runner whose Chrome failed to start says nothing about the cookies — so the step greps
-`scrape.out` for `blocked by mobile.de` before touching anything. If reuse is harmful the system
-finds out on its own; if it helps, the cache simply persists.
+So the workflow does not bet either way: **state that was restored and then blocked is deleted**,
+and the next run starts cold. That needs `actions: write`. Only an actual denial counts — a runner
+whose Chrome failed to start says nothing about the cookies — so the step greps `scrape.out` for
+`blocked by mobile.de` before touching anything. If reuse is harmful the system finds out on its
+own; if it helps, the cache simply persists.
 
 ### Two page variants, and the bug class they cause
 

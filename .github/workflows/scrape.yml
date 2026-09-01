@@ -69,43 +69,46 @@ jobs:
         run: node --experimental-sqlite --no-warnings src/history.js import
 
       # Akamai Bot Manager issues a year-long `_abck` trust token and a family of `bm_*`
-      # cookies; presenting them again is what keeps a run from looking like a brand-new
-      # cookie-less client. Only the cookie store is cached — a full Chrome profile is ~130 MB
-      # of model and metrics data that Chrome recreates on its own. browser.js pins cookie
-      # encryption to Chrome's built-in key so the store survives the move between runners.
+      # cookies. Restoring those *alone* puts the browser in a state no real returning visitor is
+      # ever in: it presents `bm_lso` — Akamai's local-storage marker — from a profile whose
+      # localStorage is empty, and a History with no record of ever having been here. A sensor
+      # script can read all three. So carry the small, consistent set rather than the cookie file
+      # on its own; it comes to ~220 KB against the ~130 MB of model and metrics data that made
+      # caching a whole profile pointless.
       #
-      # actions/cache never overwrites an existing key, so each run saves under its own run id
-      # and restores whichever previous one is newest.
+      # Deliberately NOT cached: Service Worker. It is the largest part by far, and a stale
+      # worker can serve a cached page instead of the live one, which would quietly poison the
+      # scrape with yesterday's listings.
+      #
+      # The cache mirrors the profile's own layout, so restoring is a straight copy back and the
+      # Windows/Linux split over where `Cookies` lives stops mattering. actions/cache never
+      # overwrites an existing key, so each run saves under its own run id and restores whichever
+      # previous one is newest.
       #
       # **On the runner Chrome keeps its cookies at `Default/Cookies`, not
       # `Default/Network/Cookies`.** That second path is the Windows layout, and hardcoding it
-      # meant no `chrome-cookies-*` cache was written once between 2026-08-11 and 2026-09-01 —
-      # every run in that window reached mobile.de as a first-time client, which is the state
-      # Akamai challenges. actions/cache and `hashFiles()` were both reporting the truth; a path
-      # that resolves to nothing is a warning rather than a failure, so it stayed green and
-      # silent for three weeks. Hence: locate the store, record where it was found so the restore
-      # puts it back there, and have both steps say out loud what they saw.
-      - name: Restore Chrome cookie store
+      # meant nothing was cached at all between 2026-08-11 and 2026-09-01 — every run in that
+      # window reached mobile.de as a first-time client. actions/cache and `hashFiles()` were both
+      # reporting the truth; a path that resolves to nothing is a warning rather than a failure,
+      # so it stayed green and silent for three weeks.
+      - name: Restore Chrome browser state
         id: restore
         uses: actions/cache/restore@v4
         with:
-          path: chrome-cookies
-          key: chrome-cookies-${{ github.run_id }}
-          restore-keys: chrome-cookies-
+          path: chrome-state
+          key: chrome-state-${{ github.run_id }}
+          restore-keys: chrome-state-
 
-      - name: Load the restored cookies into the profile
+      - name: Load the restored state into the profile
         run: |
-          if [ ! -f chrome-cookies/Cookies ]; then
-            echo "::warning::no cached cookie store — this run starts cold and may be denied"
+          if [ ! -d chrome-state ]; then
+            echo "::warning::no cached browser state — this run starts cold"
             exit 0
           fi
-          # The cache records where Chrome actually kept the store, because that path is not
-          # the same everywhere and hardcoding it is what broke this for three weeks.
-          dest=$(cat chrome-cookies/path 2>/dev/null || echo .chrome-profile/Default/Network/Cookies)
-          mkdir -p "$(dirname "$dest")"
-          cp -a chrome-cookies/Cookies "$dest"
-          [ -f chrome-cookies/Cookies-journal ] && cp -a chrome-cookies/Cookies-journal "$dest-journal"
-          echo "restored cookie store into $dest ($(stat -c%s "$dest") bytes)"
+          mkdir -p .chrome-profile
+          cp -a chrome-state/. .chrome-profile/
+          echo "restored $(du -sk chrome-state | cut -f1) KB of profile:"
+          find chrome-state -maxdepth 2 -mindepth 2 | sed 's|^chrome-state/|  |'
 
       - name: Scrape
         id: scrape
@@ -126,24 +129,22 @@ jobs:
       # Cached only after a success. A denied run's `_abck` carries Akamai's rejection, so
       # keeping it would hand the next run a token already known to fail rather than a clean
       # slate.
-      - name: Stage the cookie store for caching
-        id: cookies
+      - name: Stage the browser state for caching
+        id: state
         # Runs even on a denied scrape, because where Chrome put its profile is worth knowing
         # either way; only the caching itself is gated on success.
         if: always()
         run: |
-          # Newest wins: both layouts can exist in one profile (Chrome 96 moved the store to
-          # Default/Network/ and leaves the old file behind when it migrates), and the live one
-          # is whichever was written last. Picking by find(1) order would be a coin toss.
+          # Newest wins: both cookie layouts can exist in one profile, since Chrome 96 leaves the
+          # old file behind when it migrates, and only one of them is live.
           found=$(find .chrome-profile -name Cookies -type f -exec ls -t {} + 2>/dev/null | head -1)
           if [ -z "$found" ]; then
             echo "::warning::no Chrome cookie store anywhere under .chrome-profile"
             find .chrome-profile -maxdepth 2 2>/dev/null | head -30 || echo "(no .chrome-profile at all)"
             exit 0
           fi
-          # A store with zero rows is the failure this whole mechanism exists to avoid: it looks
-          # like a cache hit to the next run while carrying no trust token at all. That is what
-          # keepProfile persisted before browser.js learned to shut Chrome down gracefully.
+          # A store with zero rows looks like a cache hit to the next run while carrying no trust
+          # token at all — the failure this whole mechanism exists to avoid.
           rows=$(node --experimental-sqlite --no-warnings -e '
             const { DatabaseSync } = require("node:sqlite");
             const db = new DatabaseSync(process.argv[1], { readOnly: true });
@@ -151,54 +152,64 @@ jobs:
           ' "$found" 2>/dev/null || echo 0)
           echo "cookie store at $found — $(stat -c%s "$found") bytes, $rows rows"
           if [ "${{ steps.scrape.outputs.scraped }}" != "true" ]; then
-            echo "scrape did not succeed — not caching this run's token"
+            echo "scrape did not succeed — not caching this run's state"
             exit 0
           fi
           if [ "$rows" -eq 0 ]; then
             echo "::warning::cookie store has no rows — refusing to cache an empty token"
             exit 0
           fi
-          rm -rf chrome-cookies
-          mkdir -p chrome-cookies
-          cp -a "$found" chrome-cookies/Cookies
-          [ -f "$found-journal" ] && cp -a "$found-journal" chrome-cookies/Cookies-journal
-          echo "$found" > chrome-cookies/path
+          rm -rf chrome-state
+          copy_part() {
+            [ -e ".chrome-profile/$1" ] || return 0
+            mkdir -p "chrome-state/$(dirname "$1")"
+            cp -a ".chrome-profile/$1" "chrome-state/$1"
+            echo "  staged $1"
+          }
+          copy_part "Default/Cookies"
+          copy_part "Default/Cookies-journal"
+          copy_part "Default/Network"
+          copy_part "Default/Local Storage"
+          copy_part "Default/History"
+          copy_part "Default/Preferences"
+          echo "staged $(du -sk chrome-state | cut -f1) KB"
           echo "save=true" >> "$GITHUB_OUTPUT"
 
-      - name: Save Chrome cookie store
-        if: always() && steps.cookies.outputs.save == 'true'
+      - name: Save Chrome browser state
+        if: always() && steps.state.outputs.save == 'true'
         uses: actions/cache/save@v4
         with:
-          path: chrome-cookies
-          key: chrome-cookies-${{ github.run_id }}
+          path: chrome-state
+          key: chrome-state-${{ github.run_id }}
 
       # Every runner gets a different address out of the ~28 million GitHub publishes for
-      # Actions, so a reused `_abck` is always presented from an IP that did not earn it. If
-      # Akamai binds that token to network context, replaying it scores worse than arriving
-      # cold — and cold demonstrably works, since every run up to 2026-09-01 was cookie-less
-      # and 93% of them succeeded.
+      # Actions, so restored state is always presented from an IP that did not earn it. If Akamai
+      # binds `_abck` to network context, replaying it scores worse than arriving cold — and cold
+      # demonstrably works, since every run up to 2026-09-01 was cookie-less and 93% succeeded.
       #
-      # Rather than guess which way it cuts, let the run say so: a token that was restored and
-      # then blocked is a token worth throwing away. Only for an actual denial — a runner whose
-      # Chrome failed to start says nothing about the cookies.
-      - name: Drop the cached token after a denial
+      # Rather than guess which way it cuts, let the run say so: state that was restored and then
+      # blocked is state worth throwing away. Only for an actual denial — a runner whose Chrome
+      # failed to start says nothing about the cookies.
+      - name: Drop the cached state after a denial
         if: always() && steps.scrape.outputs.scraped != 'true' && steps.restore.outputs.cache-matched-key != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! grep -q "blocked by mobile.de" scrape.out 2>/dev/null; then
-            echo "failure was not a block — keeping the cached token"
+            echo "failure was not a block — keeping the cached state"
             exit 0
           fi
-          ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100"                   --jq '.actions_caches[] | select(.key|startswith("chrome-cookies-")) | .id' || true)
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100" \
+                  --jq '.actions_caches[] | select(.key|startswith("chrome-state-")) | .id' || true)
           if [ -z "$ids" ]; then
-            echo "no chrome-cookies caches to drop"
+            echo "no chrome-state caches to drop"
             exit 0
           fi
           for id in $ids; do
-            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" >/dev/null               && echo "dropped cache $id" || echo "could not drop cache $id"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" >/dev/null \
+              && echo "dropped cache $id" || echo "could not drop cache $id"
           done
-          echo "::warning::denied while presenting a restored token — dropped it so the next run starts cold"
+          echo "::warning::denied while presenting restored state — dropped it so the next run starts cold"
 
       - name: Export history
         # Runs even on failure: a failed run is still recorded in the `run` table, and keeping
