@@ -48,3 +48,8 @@
 {"id":48,"listing_id":"449930051","run_id":125,"at":"2026-08-26T20:01:15.508Z","field":"vat","old_value":null,"new_value":"19% VAT"}
 {"id":49,"listing_id":"437813261","run_id":126,"at":"2026-08-27T07:53:48.470Z","field":"mileage_km","old_value":"18000","new_value":"19973"}
 {"id":50,"listing_id":"38508149293152","run_id":128,"at":"2026-08-27T22:15:13.756Z","field":"price_eur","old_value":"374979","new_value":"372317"}
+{"id":51,"listing_id":"40779638024512","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"price_eur","old_value":"309900","new_value":"299900"}
+{"id":52,"listing_id":"462188894","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"price_eur","old_value":"329900","new_value":"339900"}
+{"id":53,"listing_id":"461283073","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"title","old_value":"McLaren 750S Spider CF Exterior I Namaka Blue I B&W","new_value":"McLaren 750S Spider CF Exterior I B&W I LP 399.540"}
+{"id":54,"listing_id":"461283073","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"sub_title","old_value":"Spider CF Exterior I Namaka Blue I B&W","new_value":"Spider CF Exterior I B&W I LP 399.540"}
+{"id":55,"listing_id":"461283073","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"price_eur","old_value":"389900","new_value":"359900"}
