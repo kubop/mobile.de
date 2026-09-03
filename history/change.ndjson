@@ -53,3 +53,9 @@
 {"id":53,"listing_id":"461283073","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"title","old_value":"McLaren 750S Spider CF Exterior I Namaka Blue I B&W","new_value":"McLaren 750S Spider CF Exterior I B&W I LP 399.540"}
 {"id":54,"listing_id":"461283073","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"sub_title","old_value":"Spider CF Exterior I Namaka Blue I B&W","new_value":"Spider CF Exterior I B&W I LP 399.540"}
 {"id":55,"listing_id":"461283073","run_id":146,"at":"2026-09-01T12:32:31.833Z","field":"price_eur","old_value":"389900","new_value":"359900"}
+{"id":56,"listing_id":"452708009","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"title","old_value":"McLaren Spider / Tageszulassung / B&W / Lift / day reg","new_value":"McLaren 750S Spider / Volcano Yellow / Comfort Seats / B"}
+{"id":57,"listing_id":"452708009","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"sub_title","old_value":"Spider / Tageszulassung / B&W / Lift / day reg","new_value":"Spider / Volcano Yellow / Comfort Seats / B"}
+{"id":58,"listing_id":"452708009","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"mileage_km","old_value":"50","new_value":"0"}
+{"id":59,"listing_id":"452708009","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"previous_owners","old_value":"1","new_value":null}
+{"id":60,"listing_id":"452708009","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"condition","old_value":"Pre-Registration","new_value":"New car"}
+{"id":61,"listing_id":"461192574","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"mileage_km","old_value":null,"new_value":"0"}
