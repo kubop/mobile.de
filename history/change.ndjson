@@ -59,3 +59,4 @@
 {"id":59,"listing_id":"452708009","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"previous_owners","old_value":"1","new_value":null}
 {"id":60,"listing_id":"452708009","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"condition","old_value":"Pre-Registration","new_value":"New car"}
 {"id":61,"listing_id":"461192574","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"mileage_km","old_value":null,"new_value":"0"}
+{"id":62,"listing_id":"455696026","run_id":158,"at":"2026-09-04T11:20:15.315Z","field":"price_eur","old_value":"324500","new_value":"324400"}
