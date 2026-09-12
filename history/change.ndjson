@@ -61,3 +61,4 @@
 {"id":61,"listing_id":"461192574","run_id":154,"at":"2026-09-03T11:12:57.140Z","field":"mileage_km","old_value":null,"new_value":"0"}
 {"id":62,"listing_id":"455696026","run_id":158,"at":"2026-09-04T11:20:15.315Z","field":"price_eur","old_value":"324500","new_value":"324400"}
 {"id":63,"listing_id":"458567027","run_id":177,"at":"2026-09-09T11:21:28.983Z","field":"price_eur","old_value":"380562","new_value":"372232"}
+{"id":64,"listing_id":"455696026","run_id":189,"at":"2026-09-12T10:45:02.298Z","field":"mileage_km","old_value":"6900","new_value":"10500"}
