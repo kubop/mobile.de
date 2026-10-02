@@ -237,6 +237,51 @@ test("the reworked SRP ships a slimmed payload that still parses", { skip: skipC
   assert.ok(res.repairedFields > 0, "fields were recovered from the render tree");
 });
 
+test("VAT survives the testId it is tagged with being renamed", { skip: skipC }, () => {
+  // Exactly what run 263 hit on 2026-10-02: an rsc page whose render tree gave up every other
+  // field — 4.00 recovered per listing across all 41, where this fixture gives 4.83 — while
+  // `price-vat` matched nothing, so all 41 cars logged their VAT as removed.
+  //
+  // The rename has to be done on the bare token, not on '"price-vat"'. The page carries the
+  // testId twice: once as a data-testid attribute in the server-rendered HTML, and once inside
+  // the flight stream where it is escaped as \"price-vat\". Renaming only the quoted form
+  // leaves the flight copy intact, the exact lookup keeps working, and the test proves nothing
+  // — which is what the first version of it did.
+  //
+  // Revert the text fallback in vatFromPriceNode and this fails with every rate null.
+  const base = rowsOf(migrated);
+  assert.ok(base.some((r) => r.vat != null), "the fixture has rates to lose");
+
+  for (const rename of ["price-tax-rate", "price-vat-2026"]) {
+    const after = rowsOf(migrated.split("price-vat").join(rename));
+    assert.deepEqual(
+      after.map((r) => r.vat),
+      base.map((r) => r.vat),
+      `VAT must be byte-identical with price-vat renamed to ${rename}`,
+    );
+  }
+
+  // The section wrapping it can be renamed too, as long as it is still recognisably the price.
+  for (const rename of ["-price-box", "-price-section-v2"]) {
+    const after = rowsOf(migrated.split("-price-section").join(rename));
+    assert.deepEqual(after.map((r) => r.vat), base.map((r) => r.vat), `section renamed to ${rename}`);
+  }
+});
+
+test("a listing with no VAT is not given one by the fallback", { skip: skipC }, () => {
+  // The fallback scans rendered text, so the risk it carries is the opposite of the bug it
+  // fixes: attributing some neighbouring rate to a car that genuinely has none. Scoping the
+  // scan to the slot's own price node is what prevents that, and this is what checks it.
+  const base = rowsOf(migrated);
+  const withNone = base.filter((r) => r.vat == null);
+  assert.ok(withNone.length > 0, "the fixture has listings with no rate");
+
+  const byId = new Map(rowsOf(migrated.split("price-vat").join("price-tax-rate")).map((r) => [r.id, r]));
+  for (const r of withNone) {
+    assert.equal(byId.get(r.id).vat, null, `listing ${r.id} has no VAT and must not acquire one`);
+  }
+});
+
 test("every variant populates the display fields for every listing", { skip: skipAll }, () => {
   // Asserts shape, not presence. This is the test the bug would have failed: variant C parsed
   // fine and returned the right number of listings, all of them hollow. Revert the render-tree

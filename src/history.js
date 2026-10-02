@@ -26,6 +26,7 @@ const TABLES = {
     columns: [
       "id", "started_at", "finished_at", "status", "pages_fetched", "num_results_total",
       "listings_seen", "new_count", "removed_count", "changed_count", "duration_ms", "error",
+      "variant", "unobserved_fields",
     ],
   },
   listing: {

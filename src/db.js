@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS run (
   removed_count     INTEGER,
   changed_count     INTEGER,
   duration_ms       INTEGER,
-  error             TEXT
+  error             TEXT,
+  variant           TEXT,
+  unobserved_fields TEXT
 );
 
 CREATE TABLE IF NOT EXISTS listing (
@@ -125,12 +127,61 @@ const WATCHED_LISTING = [
   ["subTitle", "sub_title"],
 ];
 
+/**
+ * A run needs at least this many listings before its field coverage says anything, and the
+ * previous run needs to have carried the field on at least this share of its own rows.
+ */
+const COVERAGE_MIN_ROWS = 5;
+const COVERAGE_FLOOR = 0.5;
+
+/**
+ * Which watched fields this run failed to observe at all.
+ *
+ * `null` in a snapshot column is overloaded: it means both "this car has no VAT rate" (true of
+ * ~15% of listings on any given day) and "the page we were served didn't tell us". Per listing
+ * the two are indistinguishable. Per run they are not — 41 of 41 dropping at once is a parse
+ * failure, not 41 dealers switching to margin taxation on the same afternoon.
+ *
+ * Twice now that distinction has been missed. Runs 52, 57 and 63 lost VAT to the reworked SRP
+ * and run 64 logged 25 changes putting it back; run 263 lost it again to a `price-vat` testId
+ * that resolved to nothing, for 35 more. In 239 runs, per-run VAT coverage has only ever been
+ * 80–87% or exactly 0% — nothing in between — so an all-or-nothing test separates the two
+ * cleanly: applied to the whole history it fires on those four runs and on nothing else.
+ *
+ * Deliberately limited to WATCHED_SNAPSHOT. Those are the fields that reach the change feed,
+ * and carrying a value forward is a small lie about what the page said — worth telling to keep
+ * the record honest about the car, but not worth telling for columns nothing diffs.
+ */
+function collapsedFields(db, runId, rows) {
+  if (rows.length < COVERAGE_MIN_ROWS) return [];
+  const prevRun = db.prepare("SELECT MAX(run_id) m FROM snapshot WHERE run_id < ?").get(runId).m;
+  if (prevRun == null) return [];
+
+  const out = [];
+  for (const [jsKey, col] of WATCHED_SNAPSHOT) {
+    if (rows.some((r) => r[jsKey] != null)) continue;
+    // Column names come from WATCHED_SNAPSHOT, never from the page.
+    const prev = db
+      .prepare(`SELECT COUNT(*) n, COUNT(${col}) c FROM snapshot WHERE run_id = ?`)
+      .get(prevRun);
+    if (prev.n >= COVERAGE_MIN_ROWS && prev.c / prev.n >= COVERAGE_FLOOR) out.push(col);
+  }
+  return out;
+}
+
 export function openDb(dbPath = paths.db) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
+  // CREATE TABLE IF NOT EXISTS leaves an existing table exactly as it was, so columns added
+  // after a database was first created have to be patched in. CI rebuilds from history/ every
+  // run and never notices; a long-lived local database would otherwise fail on every insert.
+  const runCols = new Set(db.prepare("PRAGMA table_info(run)").all().map((c) => c.name));
+  for (const col of ["variant", "unobserved_fields"]) {
+    if (!runCols.has(col)) db.exec(`ALTER TABLE run ADD COLUMN ${col} TEXT`);
+  }
   return db;
 }
 
@@ -153,7 +204,8 @@ export function failRun(db, runId, error, pagesFetched = 0, durationMs = null) {
 export function finishRun(db, runId, stats) {
   db.prepare(
     `UPDATE run SET status='ok', finished_at=?, pages_fetched=?, num_results_total=?,
-       listings_seen=?, new_count=?, removed_count=?, changed_count=?, duration_ms=?
+       listings_seen=?, new_count=?, removed_count=?, changed_count=?, duration_ms=?,
+       variant=?, unobserved_fields=?
      WHERE id=?`,
   ).run(
     nowIso(),
@@ -164,18 +216,21 @@ export function finishRun(db, runId, stats) {
     stats.removedCount,
     stats.changedCount,
     stats.durationMs,
+    stats.variant ?? null,
+    stats.unobservedFields?.length ? stats.unobservedFields.join(",") : null,
     runId,
   );
 }
 
 /**
- * Record one run's worth of listings. Returns { newIds, relistedIds, changes }.
+ * Record one run's worth of listings. Returns { newIds, relistedIds, changes, unobserved }.
  * Wrapped in a transaction so a mid-write crash can't leave a half-recorded run.
  */
 export function recordListings(db, runId, seenAt, rows) {
   const newIds = [];
   const relistedIds = [];
   const changes = [];
+  const unobserved = new Set(collapsedFields(db, runId, rows));
 
   // Includes the watched listing-level columns so we can diff them before overwriting.
   const getListing = db.prepare("SELECT id, removed_at, title, sub_title FROM listing WHERE id = ?");
@@ -295,14 +350,32 @@ export function recordListings(db, runId, seenAt, rows) {
 
       // Diff against the previous snapshot before inserting the new one.
       const prev = getPrevSnap.get(r.id);
+
+      /**
+       * What actually gets stored for the watched columns. A field the whole run failed to
+       * observe is carried forward rather than written as null, and not diffed.
+       *
+       * Suppressing the diff alone would not be enough: the null would still land in the
+       * snapshot, and the next run to see the field would diff against it and log the change in
+       * reverse. That second wave is not hypothetical — run 64 recorded 25 of them cleaning up
+       * after runs 52, 57 and 63.
+       */
+      const val = {};
+      for (const [jsKey, col] of WATCHED_SNAPSHOT) {
+        val[col] = unobserved.has(col) ? (prev?.[col] ?? null) : r[jsKey];
+      }
+
       if (prev) {
-        for (const [jsKey, col] of WATCHED_SNAPSHOT) diffSnapshot(r.id, col, prev[col], r[jsKey]);
+        for (const [jsKey, col] of WATCHED_SNAPSHOT) {
+          if (unobserved.has(col)) continue;
+          diffSnapshot(r.id, col, prev[col], r[jsKey]);
+        }
       }
 
       insertSnapshot.run(
-        r.id, runId, seenAt, r.priceEur, r.priceRaw, r.mileageKm, r.previousOwners,
-        r.powerKw, r.powerHp, r.condition, r.conditionNew, r.hasDamage, r.readyToDrive,
-        r.vat, r.color, r.cubicCapacity, r.inspection, r.modifiedAt, r.raw,
+        r.id, runId, seenAt, val.price_eur, r.priceRaw, val.mileage_km, val.previous_owners,
+        r.powerKw, r.powerHp, val.condition, r.conditionNew, r.hasDamage, r.readyToDrive,
+        val.vat, r.color, r.cubicCapacity, val.inspection, r.modifiedAt, r.raw,
       );
     }
     db.exec("COMMIT");
@@ -311,7 +384,7 @@ export function recordListings(db, runId, seenAt, rows) {
     throw e;
   }
 
-  return { newIds, relistedIds, changes };
+  return { newIds, relistedIds, changes, unobserved: [...unobserved] };
 }
 
 /**

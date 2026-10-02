@@ -35,6 +35,8 @@ function doRun(db, rows, { markGone = true } = {}) {
     removedCount: removed.length,
     changedCount: res.changes.length,
     durationMs: 1,
+    variant: "rsc",
+    unobservedFields: res.unobserved,
   });
   return { runId: id, ...res, removed };
 }
@@ -171,18 +173,19 @@ test("a payload that stops carrying a field neither wipes it nor logs a change",
   const r2 = doRun(db, hollow, { markGone: false });
 
   // Listing fields are kept, so reporting a change would contradict the table. Snapshot fields
-  // are stored as seen, so vat going absent is still recorded — deliberately asymmetric, because
-  // a real "New car" -> null once accompanied a genuine price, mileage and owner change.
+  // are stored as seen — but a field that vanished from every listing at once did not vanish
+  // from the cars, so it is carried forward and not diffed. See collapsedFields in db.js.
   assert.deepEqual(
     r2.changes.filter((c) => ["title", "sub_title"].includes(c.field)),
     [],
     "a preserved field is not a change",
   );
-  assert.equal(
-    r2.changes.filter((c) => c.field === "vat" && c.to === null).length,
-    full.filter((r) => r.vat != null).length,
-    "a snapshot field going absent is still recorded",
+  assert.deepEqual(
+    r2.changes.filter((c) => c.field === "vat"),
+    [],
+    "a field lost by the whole run is a fact about the page, not about any car",
   );
+  assert.deepEqual(r2.unobserved, ["vat"], "and the run says so");
 
   const before = full[0];
   const after = db
@@ -193,6 +196,84 @@ test("a payload that stops carrying a field neither wipes it nor logs a change",
   assert.equal(after.short_title, before.shortTitle);
   assert.equal(after.image, before.image, "the photo survived");
   assert.equal(after.seller_name, before.sellerName, "the seller name survived");
+});
+
+test("a field lost by one listing is still a change", { skip }, () => {
+  // The other half of the guard, and the reason it counts per run rather than per listing.
+  // Run 13 was real: a dealer turned a new car into a used demo, and condition going
+  // "New car" -> null belonged to the same event as its price, mileage and owner count moving.
+  // One listing losing a field says something about that car; all of them losing it does not.
+  const db = tmpDb();
+  const full = baseRows();
+  doRun(db, full);
+
+  const victim = full.find((r) => r.vat != null);
+  const second = baseRows().map((r) => (r.id === victim.id ? { ...r, vat: null } : r));
+  const r2 = doRun(db, second, { markGone: false });
+
+  assert.deepEqual(r2.unobserved, [], "one listing is not a coverage collapse");
+  assert.deepEqual(
+    r2.changes.filter((c) => c.field === "vat").map((c) => [c.id, c.from, c.to]),
+    [[victim.id, victim.vat, null]],
+    "and the change is reported as the fact about that car that it is",
+  );
+  assert.equal(
+    db.prepare("SELECT vat FROM snapshot WHERE listing_id=? ORDER BY id DESC LIMIT 1").get(victim.id).vat,
+    null,
+    "a genuine absence is stored as absent",
+  );
+});
+
+test("a run-wide loss is carried forward, so its recovery is not a change either", { skip }, () => {
+  // Runs 52/57/63 lost VAT and run 64 logged 25 changes putting it back; run 263 lost it again
+  // for 35 more. Both waves come from the same null, which is why suppressing the diff is not
+  // enough on its own — the stored value has to stay truthful about the car too.
+  const db = tmpDb();
+  const full = baseRows();
+  doRun(db, full);
+
+  const blind = baseRows().map((r) => ({ ...r, vat: null }));
+  const r2 = doRun(db, blind, { markGone: false });
+  assert.deepEqual(r2.unobserved, ["vat"]);
+
+  const sample = full.find((r) => r.vat != null);
+  assert.equal(
+    db.prepare("SELECT vat FROM snapshot WHERE listing_id=? ORDER BY id DESC LIMIT 1").get(sample.id).vat,
+    sample.vat,
+    "the last known rate is what the blind run stored",
+  );
+  assert.equal(
+    db.prepare("SELECT unobserved_fields f FROM run WHERE id=?").get(r2.runId).f,
+    "vat",
+    "the run records that it was carried, not observed",
+  );
+
+  // The page starts sending VAT again.
+  const r3 = doRun(db, baseRows(), { markGone: false });
+  assert.deepEqual(
+    r3.changes.filter((c) => c.field === "vat"),
+    [],
+    "no recovery wave: the blind run left nothing to diff against",
+  );
+  assert.deepEqual(r3.unobserved, []);
+});
+
+test("a collapse guard needs something to compare against", { skip }, () => {
+  // No previous run, too few listings, or a field the previous run did not carry either: all
+  // cases where 0% coverage says nothing, so the guard must stay out of the way.
+  const db = tmpDb();
+  const blind = baseRows().map((r) => ({ ...r, vat: null }));
+  const r1 = doRun(db, blind);
+  assert.deepEqual(r1.unobserved, [], "a first run has no baseline");
+
+  const r2 = doRun(db, baseRows().map((r) => ({ ...r, vat: null })), { markGone: false });
+  assert.deepEqual(r2.unobserved, [], "nor does a run whose predecessor had no VAT either");
+
+  const tiny = tmpDb();
+  const few = baseRows().slice(0, 3);
+  doRun(tiny, few);
+  const r3 = doRun(tiny, few.map((r) => ({ ...r, vat: null })), { markGone: false });
+  assert.deepEqual(r3.unobserved, [], "three listings are too few to call it a collapse");
 });
 
 test(

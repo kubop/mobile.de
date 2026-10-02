@@ -171,7 +171,42 @@ function textOf(node) {
  * only the prop form silently finds no VAT.
  */
 const SLOT_TESTID =
-  /"(?:testId|data-testid)":"((?:base|tic|top)-result-listing-\d+)(-[a-z-]+)?"/g;
+  /"(?:testId|data-testid)":"((?:base|tic|top)-result-listing-\d+)(-[a-z0-9-]+)?"/g;
+
+/**
+ * A rendered VAT rate: "19% VAT", "19,00 % MwSt.".
+ *
+ * No word boundary before the digits: the fallback matches over `textOf` output, which flattens
+ * the RSC node tree and glues the rate to the tag names around it ("$span21% VAT") — between
+ * "n" and "2" there is no boundary to fire on. The lookbehind is what was actually wanted
+ * anyway: it stops a longer number being matched from its tail.
+ */
+const VAT_TEXT = /(?<!\d)\d{1,2}(?:[.,]\d+)?\s*%\s*(?:VAT|MwSt\.?)/i;
+
+/**
+ * Read a listing's VAT rate out of its rendered price node.
+ *
+ * Layered because the exact lookup is a single point of failure. On 2026-10-02 run 263 was
+ * served an rsc page whose render tree gave up every other field — 4.00 recovered fields per
+ * listing across all 41, where a page carrying VAT yields 4.83 — while `price-vat` matched
+ * nothing at all. One renamed testId empties the column for every car at once, and nothing
+ * downstream can tell that from 41 dealers switching to margin taxation on the same afternoon.
+ *
+ * So the testId stays first, being exact, and a scan of the same node's rendered text backs it
+ * up. The scan is deliberately confined to the slot's own price node: a rate matched anywhere
+ * looser could be attributed to the wrong car, and inventing a VAT for a listing that genuinely
+ * has none is worse than the null this is trying to avoid.
+ *
+ * It has to run over `textOf`, not the node's JSON. The rate is split across sibling children
+ * — `["19","% VAT"]` — so in the serialised form the number and the unit are never adjacent and
+ * no amount of regex over it matches. Flattening to rendered text is what puts them back
+ * together, which is the same thing the testId path has always relied on.
+ */
+function vatFromPriceNode(obj) {
+  const tagged = textOf(findByTestId(obj, "price-vat")?.children).trim();
+  if (tagged) return tagged;
+  return textOf(obj).match(VAT_TEXT)?.[0] ?? null;
+}
 
 /**
  * Recover the display fields the migrated SRP renders but no longer ships as data.
@@ -226,8 +261,9 @@ function renderTreeFields(flight) {
       // Listings with a thumbnail strip use `-image-large` for the preview and `-image` for
       // none of it; `-image-thumbnail-*` carry a src too and must not be mistaken for it.
       if (obj.src) fill(bySlot, slot, { previewImage: { src: obj.src } });
-    } else if (suffix === "-price-section") {
-      const vat = textOf(findByTestId(obj, "price-vat")?.children).trim();
+    } else if (suffix.includes("price")) {
+      // Matched on substring, not equality, so renaming the section itself is survivable too.
+      const vat = vatFromPriceNode(obj);
       if (vat) fill(bySlot, slot, { vat });
     }
   }

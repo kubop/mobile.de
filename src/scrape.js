@@ -167,6 +167,9 @@ async function collectAll(page, cfg) {
   let numPages = null;
   let pagesFetched = 0;
   let complete = false;
+  // Recorded per run because the log line is the only place it has ever existed, and CI logs
+  // need admin rights to read and expire. Diagnosing run 263 after the fact depended on it.
+  const variants = new Set();
 
   // Whatever we last navigated to becomes the Referer for the next hop: the homepage for
   // page 1, page N-1 for page N.
@@ -182,6 +185,7 @@ async function collectAll(page, cfg) {
     const res = await fetchPage(page, cfg, p, referer);
     referer = searchUrlForPage(cfg.searchUrl, p);
     pagesFetched++;
+    if (res.variant) variants.add(res.variant);
     if (p === 1) {
       numResultsTotal = res.numResultsTotal;
       numPages = res.numPages;
@@ -230,7 +234,14 @@ async function collectAll(page, cfg) {
     }
   }
 
-  return { listings: all, numResultsTotal, numPages, pagesFetched, complete };
+  return {
+    listings: all,
+    numResultsTotal,
+    numPages,
+    pagesFetched,
+    complete,
+    variant: [...variants].join("+") || null,
+  };
 }
 
 function fmtMoney(n) {
@@ -294,7 +305,7 @@ async function main() {
       return 0;
     }
 
-    const { newIds, relistedIds, changes } = recordListings(db, runId, startedAt, rows);
+    const { newIds, relistedIds, changes, unobserved } = recordListings(db, runId, startedAt, rows);
     const removed = markRemoved(db, runId, startedAt);
 
     finishRun(db, runId, {
@@ -305,6 +316,8 @@ async function main() {
       removedCount: removed.length,
       changedCount: changes.length,
       durationMs: Date.now() - t0,
+      variant: collected.variant,
+      unobservedFields: unobserved,
     });
 
     log("");
@@ -315,6 +328,16 @@ async function main() {
     log(`  removed:   ${removed.length}${removed.length ? ` -> ${removed.join(", ")}` : ""}`);
     log(`  changes:   ${changes.length}`);
     for (const c of changes) log(`    ${c.id} ${c.field}: ${c.from} -> ${c.to}`);
+    // Not fatal: price, mileage and the rest of the run are still good, and throwing the whole
+    // run away to avoid one bad column would lose more than it saves. But it must be visible.
+    if (unobserved.length) {
+      log("");
+      log(
+        `  WARNING: ${unobserved.join(", ")} came back empty for all ${rows.length} listings ` +
+          `and was carried forward from the previous run, not recorded as a change. ` +
+          `The page stopped providing it — check the extractor against a fresh capture.`,
+      );
+    }
     return 0;
   } catch (e) {
     failRun(db, runId, e.message, pagesFetched, Date.now() - t0);

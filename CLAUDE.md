@@ -174,6 +174,13 @@ times in production:
   vanishing describes the page we were served, not the car.
 - seller type — the reworked payload kept only `contact.enumType` (`DEALER`) where the others
   send `Dealer`. `normalizeSellerEnum()` restores the display form.
+- VAT again, from the other direction — run 263 (2026-10-02) was served an rsc page whose
+  render tree gave up every other field but whose `price-vat` testId matched nothing, so all 41
+  listings recorded their rate as removed. The tell is in the log: **4.00 recovered fields per
+  listing, where a page carrying VAT gives 4.83.** `vatFromPriceNode()` now falls back to
+  scanning the price node's rendered text, which survives the tag being renamed. That fallback
+  has to run over `textOf()` output and not the node's JSON — the rate is split across sibling
+  children (`["19","% VAT"]`), so in serialised form the number and the unit are never adjacent.
 
 When adding or changing an extracted field, check it against **all three** fixtures and assert
 its shape rather than its presence — the broken image URL satisfied `assert.ok(r.image)`, and 31
@@ -199,6 +206,33 @@ instead, so git deltas it well. Consequences worth knowing:
   stops being persisted.
 
 ### Fail loudly, never silently empty
+
+The same reasoning applies one level down, to columns rather than rows. `null` in a snapshot
+column is overloaded: it means both "this car has no VAT rate" (true of ~15% of listings on any
+day) and "the page didn't tell us". Per listing the two are indistinguishable; per run they are
+not, because 41 of 41 dropping at once is a parse failure, not 41 dealers switching to margin
+taxation on the same afternoon. `collapsedFields()` in `db.js` compares each watched field's
+coverage against the previous run and, when it falls from ≥50% to exactly zero, **carries the
+last value forward instead of storing null, skips the diff, and records the field in
+`run.unobserved_fields`**.
+
+Carrying forward is the part that is easy to leave out and that does half the work. Suppressing
+only the diff still writes the null, and the next run to see the field diffs against it and logs
+the change in reverse — runs 52/57/63 lost VAT and run 64 logged 25 changes putting it back;
+run 263 lost it again for 35 more. Both waves come from the same stored null.
+
+The threshold is empirical, not a guess: across 239 runs and six watched fields, per-run VAT
+coverage has only ever been 80–87% or exactly 0%, never anything between, and replaying the rule
+over the whole history fires it on runs 52, 57, 63 and 263 and on nothing else. A single listing
+losing a field is still recorded as a change — that asymmetry is deliberate and `run 13` is why:
+a dealer turned a new car into a used demo, and `condition` going "New car" -> null belonged to
+the same event as its price, mileage and owner count moving.
+
+A collapse is **not** fatal. Run 263's price, mileage and spec data were all correct, and
+discarding the run to avoid one bad column would lose more than it saves — so the scrape logs a
+WARNING and carries on. `run.variant` is persisted for the same reason the guard exists: the
+variant was previously only ever written to stdout, and diagnosing run 263 after the fact meant
+reading a CI log that needs admin rights and expires.
 
 A scrape that returns nothing looks identical to "every car was delisted", which would mark
 every ad removed. So `extract.js` throws rather than returning `[]`, and `scrape.js` aborts if
