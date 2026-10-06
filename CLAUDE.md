@@ -154,14 +154,31 @@ and never parses HTML — the result set is embedded as JSON.
 The reworked one is the trap: it is an RSC page too, so `variant` **cannot** tell it from the
 first. Its listing markup carries `isCosSrpMigrationVariant: true`, and its `searchResults`
 dropped title, subtitle, VAT, preview image, seller name and `onlineSince`. `renderTreeFields()`
-reads the first four back out of the rendered component props, joining them to listing ids via
+reads them all back out of the rendered component props, joining them to listing ids via
 the numbered slot testIds (`base-result-listing-3` and its `-title` / `-image` / `-price-section`
-children). Seller name and `onlineSince` are behind `$L` chunk references and build-hashed class
-names, and lat/lon are gone from the page entirely — those keep their last known value instead.
+children). Only lat/lon are genuinely gone from the page — those keep their last known value.
+
+**Seller name and `onlineSince` are one hop further out, and the hop is the whole difficulty.**
+The flight stream is a sequence of `<id>:<json>` lines, and a node tree refers to another chunk
+by putting the string `"$L<id>"` where that chunk's value belongs; React resolves those on the
+client. The seller card and the details section are chunks of their own, so a parser that walks
+only the slot's own subtree stops at the placeholder and sees nothing — which is why both were
+documented here as unrecoverable for two months. `flightChunks()` indexes the chunks by id and
+`findNode()` steps through `$L` references while searching, after which the fields read out
+like any other. The cost of the omission: **every ad first seen from run 125 on had both stored
+as null**, because COALESCE can only carry forward a value some earlier run observed, and a new
+listing has none to carry. 10 of the 50 listings in `history/` were affected.
+
+Neither field has an exact testId, so each is read with a fallback, as VAT is. The seller name
+is tagged by a CSS-module class (`SellerInfo-module__<build hash>__dealerName`) whose hash moves
+every deploy, so only the `__dealerName` suffix is matched, and if that is renamed the first
+span rendering plain text inside `seller-info` is taken instead. `onlineSince` is matched as a
+date (`5/13/2026, 12:35`) inside the `online-since` node rather than by stripping the
+"Ad online since" label, so localising the page cannot empty the column.
 
 **The variants format identical data differently, so any field stored verbatim can produce
-phantom diffs or broken values whenever the served variant flips.** This has happened three
-times in production:
+phantom diffs or broken values whenever the served variant flips.** This has happened
+repeatedly in production:
 
 - VAT — `19.00% VAT` vs `19% VAT`. One run recorded 25 phantom changes out of 26.
 - image URL — `img.classistatic.de/…` with no scheme and no `rule` param, vs a full
@@ -172,12 +189,19 @@ times in production:
   recovers what it can, and `updateListing` COALESCEs so an absent field can never overwrite a
   known value. `diff()` also ignores transitions to or from null — a field appearing or
   vanishing describes the page we were served, not the car.
+- listing date — `created` (variant A only) and `onlineSince` (all three) are *different
+  dates*: when the ad was first written versus when the current listing went live, 14 months
+  apart for 426267925. Reading `created` first meant the column jumped whenever the served
+  variant flipped. `onlineSince` wins now — it is the one all three carry, the one the site
+  itself prints, and the one 23 of 24 stored values already came from.
 - seller type — the reworked payload kept only `contact.enumType` (`DEALER`) where the others
   send `Dealer`. `normalizeSellerEnum()` restores the display form.
 - VAT again, from the other direction — run 263 (2026-10-02) was served an rsc page whose
   render tree gave up every other field but whose `price-vat` testId matched nothing, so all 41
   listings recorded their rate as removed. The tell is in the log: **4.00 recovered fields per
-  listing, where a page carrying VAT gives 4.83.** `vatFromPriceNode()` now falls back to
+  listing, where a page carrying VAT gave 4.83** (6.83 since seller name and `onlineSince`
+  were added to the recovery — compare runs against each other, not against a fixed number).
+  `vatFromPriceNode()` now falls back to
   scanning the price node's rendered text, which survives the tag being renamed. That fallback
   has to run over `textOf()` output and not the node's JSON — the rate is split across sibling
   children (`["19","% VAT"]`), so in serialised form the number and the unit are never adjacent.

@@ -239,7 +239,8 @@ test("the reworked SRP ships a slimmed payload that still parses", { skip: skipC
 
 test("VAT survives the testId it is tagged with being renamed", { skip: skipC }, () => {
   // Exactly what run 263 hit on 2026-10-02: an rsc page whose render tree gave up every other
-  // field — 4.00 recovered per listing across all 41, where this fixture gives 4.83 — while
+  // field — 4.00 recovered per listing across all 41, where this fixture gave 4.83 at the
+  // time and gives 6.83 now — while
   // `price-vat` matched nothing, so all 41 cars logged their VAT as removed.
   //
   // The rename has to be done on the bare token, not on '"price-vat"'. The page carries the
@@ -286,7 +287,8 @@ test("every variant populates the display fields for every listing", { skip: ski
   // Asserts shape, not presence. This is the test the bug would have failed: variant C parsed
   // fine and returned the right number of listings, all of them hollow. Revert the render-tree
   // parser in extract.js and this fails on C with title/subTitle/shortTitle/image all null.
-  const REQUIRED = ["id", "url", "make", "model", "title", "shortTitle", "subTitle", "image", "sellerType", "priceEur"];
+  const REQUIRED = ["id", "url", "make", "model", "title", "shortTitle", "subTitle", "image",
+    "sellerType", "priceEur", "sellerName", "createdAt"];
   for (const [name, html] of [["A", fixture], ["B", legacy], ["C", migrated]]) {
     const rows = rowsOf(html);
     assert.ok(rows.length > 0, `${name} has listings`);
@@ -300,7 +302,10 @@ test("variants agree field-for-field on the ads they share", { skip: skipAll }, 
   // The strongest guard against a mis-joined render tree: an off-by-one in the slot mapping
   // would attach a neighbour's title or photo, which no per-row null check would notice.
   // priceEur is excluded — it genuinely moved between the Aug 5 and Aug 11 captures.
-  const AGREE = ["title", "shortTitle", "subTitle", "image", "vat", "sellerType"];
+  // createdAt is excluded for the same reason as priceEur: ad 447650425 was genuinely re-listed
+  // between the Aug 5 and the Aug 11 capture. The two same-day fixtures are compared on it in
+  // a test of their own.
+  const AGREE = ["title", "shortTitle", "subTitle", "image", "vat", "sellerType", "sellerName"];
   const byId = (html) => new Map(rowsOf(html).map((r) => [String(r.id), r]));
   const variants = { A: byId(fixture), B: byId(legacy), C: byId(migrated) };
 
@@ -316,5 +321,83 @@ test("variants agree field-for-field on the ads they share", { skip: skipAll }, 
         );
       }
     }
+  }
+});
+
+test("the reworked SRP yields a seller name and a listing date for every ad", { skip: skipC }, () => {
+  // What the dashboard was actually missing: every listing first seen from run 125 on had
+  // seller_name and created_at null. COALESCE in updateListing carries a field forward, but
+  // only for a listing some earlier run already saw with it — a new ad has nothing to carry.
+  //
+  // Both fields sit in `$L`-referenced flight chunks rather than in the slot's own subtree,
+  // so the parser used to stop at the placeholder. Revert flightChunks/findNode and this
+  // fails with all 22 null.
+  const rows = rowsOf(migrated);
+  for (const r of rows) {
+    assert.ok(r.sellerName, `listing ${r.id} has a seller name`);
+    assert.ok(Number.isInteger(r.createdAt), `listing ${r.id} has a listing date`);
+    // Sanity on the join as well as the presence: a date read off the wrong node, or a label
+    // parsed as one, would not land in the window the fixture was captured in.
+    assert.ok(
+      r.createdAt > Date.UTC(2015, 0, 1) / 1000 && r.createdAt < Date.UTC(2026, 7, 12) / 1000,
+      `listing ${r.id} listed ${new Date(r.createdAt * 1000).toISOString()} is a plausible date`,
+    );
+  }
+});
+
+test("the seller name survives its class name being rehashed or renamed", { skip: skipC }, () => {
+  // The only exact hook on the name is a CSS-module class, and the build hash in the middle of
+  // it moves every deploy. localClass matches on the `__dealerName` suffix so the hash is free
+  // to move; the fallback inside `seller-info` covers the local name changing too.
+  //
+  // Renamed on the bare token, not the quoted form: the page carries each class twice, once in
+  // the server-rendered HTML and once escaped inside the flight stream, and renaming only one
+  // of them leaves the lookup working and proves nothing.
+  const base = rowsOf(migrated);
+  assert.ok(base.every((r) => r.sellerName), "the fixture has names to lose");
+
+  const rehash = (h) => h.split("SellerInfo-module__QTbLfq__").join("SellerInfo-module__Zz99Aa__");
+  const rehashed = rowsOf(rehash(migrated));
+  assert.deepEqual(
+    rehashed.map((r) => r.sellerName),
+    base.map((r) => r.sellerName),
+    "a new build hash must change nothing",
+  );
+
+  const renamed = rowsOf(migrated.split("__dealerName").join("__sellerDisplayName"));
+  assert.deepEqual(
+    renamed.map((r) => r.sellerName),
+    base.map((r) => r.sellerName),
+    "the fallback must recover the name when the local class is renamed",
+  );
+});
+
+test("the listing date survives the 'online since' label being reworded", { skip: skipC }, () => {
+  // Read by matching the date itself rather than by stripping the label, so switching the page
+  // to German ("Inserat online seit") cannot empty the column the way a renamed price-vat
+  // emptied VAT on run 263.
+  const base = rowsOf(migrated);
+  const reworded = rowsOf(migrated.split("Ad online since").join("Inserat online seit"));
+  assert.deepEqual(
+    reworded.map((r) => r.createdAt),
+    base.map((r) => r.createdAt),
+    "a reworded label must change nothing",
+  );
+});
+
+test("the two same-day captures agree on the listing date", { skip }, () => {
+  // createdAt was read from `created` where the page offered it and from `onlineSince` where it
+  // did not — but only variant A carries `created`, and for a re-listed ad the two are months
+  // apart (14, for 426267925). So the column moved whenever the served variant flipped, and
+  // variant C recovering onlineSince would have made that flip reachable on every run.
+  //
+  // A and B are the same search captured minutes apart, so every shared ad must agree. Restore
+  // the `clean(raw.created) ?? parseOnlineSince(...)` precedence and this fails on 20 of 20.
+  const byId = (html) => new Map(rowsOf(html).map((r) => [String(r.id), r]));
+  const [a, b] = [byId(fixture), byId(legacy)];
+  const shared = [...a.keys()].filter((id) => b.has(id));
+  assert.ok(shared.length >= 10, `enough shared ads to compare (${shared.length})`);
+  for (const id of shared) {
+    assert.equal(a.get(id).createdAt, b.get(id).createdAt, `listing date agrees for ${id}`);
   }
 });

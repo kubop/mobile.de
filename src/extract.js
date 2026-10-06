@@ -160,6 +160,110 @@ function textOf(node) {
 }
 
 /**
+ * Index the flight stream's top-level chunks by id.
+ *
+ * The stream is a sequence of `<id>:<json>` lines, and a node tree refers to another chunk by
+ * putting the string `"$L<id>"` where that chunk's value belongs. React resolves those on the
+ * client; a parser that does not simply stops at the placeholder, which is exactly why seller
+ * name and `onlineSince` were written off as unrecoverable — they are not inline in the slot's
+ * own subtree, they are one hop away in a chunk of their own.
+ *
+ * Only `{`/`[` chunks are indexed: the scalar ones (`c2:null`) can hold no node tree, and
+ * skipping them keeps a stray `12:` inside some unrelated text from entering the table. The
+ * first definition of an id wins, so a later re-render cannot displace it.
+ */
+function flightChunks(flight) {
+  const chunks = new Map();
+  for (const m of flight.matchAll(/(?:^|\n)([0-9a-f]{1,8}):(?=[[{])/g)) {
+    const id = m[1];
+    if (chunks.has(id)) continue;
+    const raw = balancedSlice(flight, m.index + m[0].length);
+    if (!raw) continue;
+    try {
+      chunks.set(id, JSON.parse(raw));
+    } catch {
+      /* not a node tree */
+    }
+  }
+  return chunks;
+}
+
+const CHUNK_REF = /^\$L([0-9a-f]{1,8})$/;
+
+/**
+ * Depth-first search of a render tree for the first node satisfying `pred`, stepping through
+ * `$L` chunk references on the way.
+ *
+ * `seen` is per-search and guards against a chunk that refers back to itself; a chunk reached
+ * twice legitimately carries the same tree both times, so skipping the repeat costs nothing.
+ */
+function findNode(node, pred, chunks, seen = new Set()) {
+  if (typeof node === "string") {
+    const ref = CHUNK_REF.exec(node)?.[1];
+    if (!ref || seen.has(ref) || !chunks.has(ref)) return null;
+    seen.add(ref);
+    return findNode(chunks.get(ref), pred, chunks, seen);
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findNode(child, pred, chunks, seen);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!node || typeof node !== "object") return null;
+  if (pred(node)) return node;
+  return findNode(node.children, pred, chunks, seen);
+}
+
+/** Match a node by either spelling of the testId, as SLOT_TESTID does. */
+const byTestId = (id) => (n) => n["data-testid"] === id || n.testId === id;
+
+/**
+ * CSS-module class names are `<Component>-module__<build hash>__<local name>`. The hash moves
+ * every deploy, so only the local name is worth matching on.
+ */
+const localClass = (name) => (n) =>
+  typeof n.className === "string" && n.className.split(/\s+/).some((c) => c.endsWith(`__${name}`));
+
+/**
+ * Read a listing's seller name out of its rendered seller card.
+ *
+ * Layered like vatFromPriceNode, and for the same reason: the exact hook is a class name, and
+ * class names here are build-hashed. If `__dealerName` ever stops matching, the fallback takes
+ * the first span inside `seller-info` that renders a plain string — which in this card is the
+ * dealer name, with the location and rating after it. Scoped to the seller card so a miss
+ * yields null rather than some neighbouring text.
+ */
+function sellerNameFrom(obj, chunks) {
+  const card = findNode(obj, byTestId("seller-info"), chunks);
+  if (!card) return null;
+  const tagged = findNode(card.children, localClass("dealerName"), chunks);
+  if (tagged) {
+    const name = clean(textOf(tagged.children).trim());
+    if (name) return name;
+  }
+  const plain = (n) => typeof n.children === "string" && n.children.trim() !== "";
+  const first = findNode(card.children, plain, chunks);
+  return first ? clean(first.children.trim()) : null;
+}
+
+/**
+ * A rendered listing date: "5/13/2026, 12:35" — the shape parseOnlineSince already reads.
+ *
+ * Matched on the date itself rather than by stripping the "Ad online since" label, so the
+ * label being reworded or localised cannot empty the column.
+ */
+const ONLINE_SINCE_TEXT = /\d{1,2}\/\d{1,2}\/\d{4}(?:,\s*\d{1,2}:\d{2})?/;
+
+/** Read a listing's `onlineSince` out of its rendered details section. */
+function onlineSinceFrom(obj, chunks) {
+  const node = findNode(obj, byTestId("online-since"), chunks);
+  if (!node) return null;
+  return textOf(node.children).match(ONLINE_SINCE_TEXT)?.[0] ?? null;
+}
+
+/**
  * Each listing is rendered in a numbered slot — `base-result-listing-3`, plus `tic-` and `top-`
  * for the sponsored placements. The slot's own props object carries `listingId`, and its
  * children are suffixed from it (`base-result-listing-3-title`), which is what makes the join
@@ -188,7 +292,8 @@ const VAT_TEXT = /(?<!\d)\d{1,2}(?:[.,]\d+)?\s*%\s*(?:VAT|MwSt\.?)/i;
  *
  * Layered because the exact lookup is a single point of failure. On 2026-10-02 run 263 was
  * served an rsc page whose render tree gave up every other field — 4.00 recovered fields per
- * listing across all 41, where a page carrying VAT yields 4.83 — while `price-vat` matched
+ * listing across all 41, where a page carrying VAT yielded 4.83 (6.83 now that seller name and
+ * `onlineSince` are recovered too) — while `price-vat` matched
  * nothing at all. One renamed testId empties the column for every car at once, and nothing
  * downstream can tell that from 41 dealers switching to margin taxation on the same afternoon.
  *
@@ -221,11 +326,16 @@ function vatFromPriceNode(obj) {
  * `mo-160w` image URLs and the VAT strings come out identical, which is the only way to know
  * this repairs the data rather than inventing a second format for it.
  *
- * Not recoverable here: seller name and `onlineSince` sit in `$L`-referenced chunks behind
- * build-hashed class names, and latitude/longitude are gone from the page altogether. Those
- * keep their last known value instead — see the COALESCE in db.js's updateListing.
+ * Seller name and `onlineSince` live one hop further out, in `$L`-referenced chunks of their
+ * own, which is why they were long written off as unrecoverable — a parser that stops at the
+ * placeholder sees nothing. `flightChunks` resolves the hop, so they come back too. Every ad
+ * first seen from run 125 on had been recording both as null: COALESCE can only carry forward
+ * a value some earlier run already observed, and for a new listing there is none.
+ *
+ * Still gone: latitude/longitude, which the reworked page does not render at all.
  */
 function renderTreeFields(flight) {
+  const chunks = flightChunks(flight);
   const marks = [];
   for (const m of flight.matchAll(SLOT_TESTID)) {
     marks.push({ at: m.index, slot: m[1], suffix: m[2] ?? "" });
@@ -255,7 +365,15 @@ function renderTreeFields(flight) {
   for (const { at, slot, suffix } of marks) {
     const obj = objects.get(at);
     if (!obj) continue;
-    if (suffix === "-title") {
+    if (suffix === "") {
+      // The card's own node. A slot is marked twice — a `data-testid` on the wrapping div and
+      // a `testId` prop on the link inside it — and only the second carries `listingId`, so
+      // both are read for fields and `fill` keeps whichever answered first.
+      fill(bySlot, slot, {
+        sellerName: sellerNameFrom(obj, chunks),
+        onlineSince: onlineSinceFrom(obj, chunks),
+      });
+    } else if (suffix === "-title") {
       fill(bySlot, slot, { title: obj.title, subTitle: obj.subTitle, shortTitle: obj.shortTitle });
     } else if (suffix === "-image" || suffix === "-image-large") {
       // Listings with a thumbnail strip use `-image-large` for the preview and `-image` for
@@ -508,7 +626,10 @@ export function normalizeListing(raw) {
       clean(contact.type) ??
       clean(contact.typeLocalized) ??
       normalizeSellerEnum(contact.enumType),
-    sellerName: clean(contact.name),
+    // The reworked SRP ships a `contact` object with the name stripped out and renders it in a
+    // chunk instead, so renderTreeFields hands the recovered one over at the top level — a
+    // whole-value merge into `contact` would have found it non-null and skipped.
+    sellerName: clean(contact.name) ?? clean(raw.sellerName),
     sellerId: clean(raw.sellerId) ?? null,
     country: clean(a.cn) ?? clean(contact.country),
     zip: clean(a.z),
@@ -516,7 +637,15 @@ export function normalizeListing(raw) {
     lat: contact.latLong?.lat ?? null,
     lon: contact.latLong?.lon ?? null,
     image,
-    createdAt: clean(raw.created) ?? parseOnlineSince(raw.onlineSince),
+    /**
+     * `onlineSince` first, deliberately. Only variant A carries `created`, and the two are not
+     * the same date: `created` is when the ad was first written, `onlineSince` when the current
+     * listing went live. For a re-listed car they are months apart — 14, for 426267925 — so
+     * whichever one is read has to be read on every variant or the column jumps whenever the
+     * served variant flips. `onlineSince` is the one all three carry, the one the site itself
+     * prints ("Ad online since …"), and the one 23 of the 24 stored values already came from.
+     */
+    createdAt: parseOnlineSince(raw.onlineSince) ?? clean(raw.created),
 
     // Per-snapshot / volatile
     priceEur,
