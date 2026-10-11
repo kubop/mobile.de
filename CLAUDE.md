@@ -49,6 +49,7 @@ browser.js  spawn Chrome, attach over CDP
              ├─ queries.js    read models for both the server and the static build
              │    ├─ server.js       live API + static files
              │    └─ build-site.js   dist/ for GitHub Pages
+             │         └─ detail-codec.js  delta-encode the bundled snapshot history
              └─ history.js    SQLite <-> history/*.ndjson (the durable record)
 ```
 
@@ -269,6 +270,40 @@ explainable. Preserve this invariant when touching the scrape path.
 `public/index.html` is a single ~1400-line file with no framework. It tries the live API first
 and falls back to a bundled `data.json`, so the local and published dashboards cannot drift.
 Static mode has no API, so `build-site.js` bundles per-listing detail into `data.json`.
+
+**That bundle is delta encoded, and the encoding has a trap built into it.** A snapshot is
+written every run even when nothing changed, so ~85% of the bundled rows repeated the row
+before them: `data.json` was 4 MB, growing ~14.4 KB per run, parsed by every visitor. Each row
+now carries only the columns that differ from the row before it (`src/detail-codec.js`), and
+`priceHistory` is gone entirely because it was byte-for-byte derivable from those same rows.
+Together: **4076 KB -> 610 KB raw, 228 KB -> 67 KB gzipped, and 14.4 KB -> 1.7 KB of growth per
+run.**
+
+The trap is the same null overloading as everywhere else in this codebase: in a delta a missing
+key means "unchanged", so **a field going to null must be written as an explicit `null`**. Spell
+the two the same way and a VAT collapse becomes invisible in the drawer, because the old rate is
+carried forward — the exact failure `collapsedFields()` exists to prevent, reintroduced one
+layer up in the renderer. The first row of each listing therefore carries every column, nulls
+included, so the replay never starts from a partially known state.
+
+Three further things that are easy to get wrong here:
+
+- **Do not derive `seen_at` from `run_id`.** It saves another 230 KB and looks obviously
+  correct, but `getRuns` is `LIMIT 200` while snapshots reference run ids far older than that,
+  so the price chart silently loses its earliest points. Every row carries its own `seen_at`.
+- **`okRunIds` is not redundant with `runs`.** It is the one part of `getPriceHistory` the
+  client cannot infer: `recordListings()` writes snapshots before `finishRun()` marks the run
+  ok, so a crash in between leaves rows belonging to a failed run, and `runs` is capped.
+- **Keep one encoded row per snapshot.** Dropping unchanged rows entirely would save ~1 KB more
+  per run and break both "Scrapes seen in" and the chart's sample density — which is the whole
+  reason unchanged snapshots are recorded in the first place.
+
+The decoder is duplicated verbatim inside `public/index.html`, which is served standalone and
+cannot import from `src/`. That duplication is only safe because `test/detail-codec.test.js`
+extracts the dashboard's own copy by name and round-trips the committed history through it —
+test the mirror, not a third copy. It matters more than it looks: the decode path runs *only*
+in static mode, and local development always hits the live API, so nothing else would exercise
+it before it reached Pages.
 
 All chart colours are CSS `var()`, never resolved in JS, so a theme change repaints SVG without
 a re-render. Filters, sort, hidden columns and favourites persist in `localStorage`; stored

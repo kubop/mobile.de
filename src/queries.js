@@ -62,6 +62,20 @@ export function getPriceHistory(db) {
     .all();
 }
 
+/**
+ * Ids of every successful run, for the static build only.
+ *
+ * data.json no longer ships `priceHistory` — it is exactly derivable from the per-listing
+ * snapshots it already bundles, so sending both duplicated 851 KB. The one thing the client
+ * cannot derive is the `r.status = 'ok'` join getPriceHistory() applies: snapshots are written
+ * by recordListings() before finishRun() marks the run ok, so a crash in between leaves rows
+ * belonging to a failed run. `runs` cannot stand in for this — it is capped at 200 while
+ * snapshots reference run ids far older than that.
+ */
+export function getOkRunIds(db) {
+  return db.prepare("SELECT id FROM run WHERE status = 'ok' ORDER BY id").all().map((r) => r.id);
+}
+
 export function getChanges(db, limit = 400) {
   return db
     .prepare(`

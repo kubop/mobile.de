@@ -185,6 +185,13 @@ reproduces the full dashboard, and `npm run build` produces the static site loca
 The same `public/index.html` serves both modes: it tries the live API first and falls back to a
 bundled `data.json`, so the published page and the local one can never drift.
 
+Because a snapshot is recorded every run whether or not anything changed, ~85% of the rows
+bundled into `data.json` used to repeat the row before them verbatim. Each row now stores only
+the fields that differ from its predecessor, and `priceHistory` was dropped because the
+dashboard can rebuild it from those same rows. `data.json` went from 4076 KB to 610 KB (228 KB
+to 67 KB gzipped), and it now grows by 1.7 KB a run instead of 14.4 KB — the part that matters,
+since it is downloaded and parsed in full on every visit.
+
 ### Things to keep an eye on
 
 - **Cron is best-effort, and this was measured, not assumed.** `17 */6 * * *` fires at 00:17,

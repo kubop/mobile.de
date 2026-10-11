@@ -2,8 +2,12 @@
  * Builds the static dashboard into dist/ for GitHub Pages.
  *
  * Reuses the exact same query layer the local server uses, so the published page and the local
- * one can never drift apart. The only difference is that data.json also bundles per-listing
- * detail (which the live server serves from /api/listing/:id).
+ * one can never drift apart. Two things differ, both because there is no API to call:
+ *
+ *   - per-listing detail rides along (the live server serves it from /api/listing/:id), delta
+ *     encoded by detail-codec.js — see the comment there for why
+ *   - priceHistory does not, because the bundled detail already contains it; the dashboard
+ *     rebuilds it at load from the snapshots and okRunIds
  *
  *   node src/build-site.js            # from data/mobile.sqlite
  *   node src/build-site.js --from-history   # rebuild the db from history/ first
@@ -19,9 +23,10 @@ import {
   getRuns,
   getChanges,
   getEvents,
-  getPriceHistory,
+  getOkRunIds,
   getListingDetail,
 } from "./queries.js";
+import { encodeDetails, DETAILS_ENCODING } from "./detail-codec.js";
 
 const cfg = loadConfig();
 const outDir = path.join(paths.root, "dist");
@@ -49,9 +54,15 @@ const payload = {
   runs: getRuns(db),
   changes: getChanges(db),
   events: getEvents(db),
-  priceHistory: getPriceHistory(db),
-  // Static builds have no API to call, so per-listing detail rides along.
-  details: Object.fromEntries(listings.map((l) => [l.id, getListingDetail(db, l.id)])),
+  // Static builds have no API to call, so per-listing detail rides along — delta-encoded,
+  // because bundling every listing's full snapshot history is what made this file 4 MB.
+  // `priceHistory` is deliberately absent: the dashboard rebuilds it from these rows and
+  // okRunIds, which is byte-for-byte what getPriceHistory() would have returned.
+  detailsEncoding: DETAILS_ENCODING,
+  okRunIds: getOkRunIds(db),
+  details: encodeDetails(
+    Object.fromEntries(listings.map((l) => [l.id, getListingDetail(db, l.id)])),
+  ),
 };
 db.close();
 
@@ -72,5 +83,5 @@ console.log(`  index.html  ${kb(fs.statSync(path.join(outDir, "index.html")).siz
 console.log(`  data.json   ${kb(fs.statSync(path.join(outDir, "data.json")).size)}`);
 console.log(
   `  ${payload.listings.length} listings · ${payload.overview.runCount} run(s) · ` +
-    `${payload.priceHistory.length} price points`,
+    `${payload.overview.snapshotCount} snapshots`,
 );

@@ -704,6 +704,28 @@
 
   const histByListing = new Map();
 
+  /** Per-listing detail, replayed once at load in static mode (see inflateDetails). */
+  const detailCache = new Map();
+
+  // --- snapshot-delta codec (mirrored from src/detail-codec.js; see detail-codec.test.js) ---
+  const DETAILS_ENCODING = "snapshot-delta-1";
+
+  /**
+   * Replays [id, run_id, seen_at, patch] rows back into full snapshot objects.
+   *
+   * A key missing from a patch means "unchanged"; a key present with a null value means the
+   * field went away. Those two must stay distinct — collapsing them is how a VAT column that
+   * dropped to null would silently keep showing its old rate.
+   */
+  function decodeSnapshots(listingId, rows) {
+    const resolved = {};
+    return rows.map(([id, runId, seenAt, patch]) => {
+      Object.assign(resolved, patch);
+      return { id, listing_id: listingId, run_id: runId, seen_at: seenAt, ...resolved };
+    });
+  }
+  // --- end snapshot-delta codec ---
+
   function applyFilters(rows, { ignorePresence = false } = {}) {
     return rows.filter((r) => {
       if (!ignorePresence && state.includeRemoved === "active" && r.removed_at) return false;
@@ -1404,7 +1426,7 @@
   // -------------------------------------------------------------------- drawer
   /** Live server exposes per-listing detail; the static build bundles it into data.json. */
   async function loadDetail(id) {
-    if (STATIC_MODE) return DATA.details?.[id] ?? null;
+    if (STATIC_MODE) return detailCache.get(id) ?? DATA.details?.[id] ?? null;
     const r = await fetch(`api/listing/${id}`, { cache: "no-store" });
     return r.ok ? r.json() : null;
   }
@@ -1545,6 +1567,51 @@
     return { data: await r.json(), live: false };
   }
 
+  /**
+   * Static mode only. Replays the delta-encoded per-listing detail once, and rebuilds the
+   * priceHistory array that data.json no longer carries.
+   *
+   * Both steps are conditional on what actually arrived rather than on STATIC_MODE alone, so
+   * a data.json published before this encoding existed still renders from the same code.
+   */
+  function inflateDetails() {
+    detailCache.clear();
+    if (!STATIC_MODE) return;
+
+    const encoded = DATA.detailsEncoding === DETAILS_ENCODING;
+    for (const [id, d] of Object.entries(DATA.details ?? {})) {
+      if (d) detailCache.set(id, encoded ? { ...d, snapshots: decodeSnapshots(id, d.snapshots) } : d);
+    }
+    if (!DATA.priceHistory) DATA.priceHistory = derivePriceHistory();
+  }
+
+  /**
+   * The rows getPriceHistory() would have sent, rebuilt from the snapshots already bundled —
+   * shipping both duplicated 851 KB of the old 4 MB data.json.
+   *
+   * The run-status filter is the part that cannot be inferred locally: recordListings() writes
+   * snapshots before finishRun() marks the run ok, so a crash in between leaves rows under a
+   * failed run, and DATA.runs is capped at 200 while snapshots reach much further back. Hence
+   * okRunIds. Without it the filter is skipped rather than guessed.
+   */
+  function derivePriceHistory() {
+    const ok = DATA.okRunIds ? new Set(DATA.okRunIds) : null;
+    const out = [];
+    for (const [id, d] of detailCache) {
+      for (const s of d.snapshots) {
+        if (s.price_eur == null || (ok && !ok.has(s.run_id))) continue;
+        out.push({
+          listing_id: id,
+          seen_at: s.seen_at,
+          price_eur: s.price_eur,
+          mileage_km: s.mileage_km,
+        });
+      }
+    }
+    const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    return out.sort((a, b) => cmp(a.listing_id, b.listing_id) || cmp(a.seen_at, b.seen_at));
+  }
+
   async function load() {
     let live;
     try {
@@ -1556,6 +1623,7 @@
       return;
     }
     STATIC_MODE = !live;
+    inflateDetails();
 
     histByListing.clear();
     for (const p of DATA.priceHistory) {
