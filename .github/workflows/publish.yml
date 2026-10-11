@@ -18,6 +18,7 @@ on:
       - ".github/workflows/publish.yml"
       - "public/index.html"
       - "src/build-site.js"
+      - "src/detail-codec.js"
       - "src/queries.js"
       - "src/history.js"
       - "src/db.js"
