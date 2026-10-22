@@ -77,3 +77,4 @@
 {"id":77,"listing_id":"455696026","run_id":294,"at":"2026-10-12T15:21:32.686Z","field":"price_eur","old_value":"323500","new_value":"322900"}
 {"id":78,"listing_id":"49281512123712","run_id":303,"at":"2026-10-15T11:26:33.245Z","field":"price_eur","old_value":"309750","new_value":"304750"}
 {"id":79,"listing_id":"455696026","run_id":316,"at":"2026-10-18T15:50:52.233Z","field":"price_eur","old_value":"322900","new_value":"322500"}
+{"id":80,"listing_id":"49281512123712","run_id":330,"at":"2026-10-22T11:50:59.049Z","field":"price_eur","old_value":"304750","new_value":"298750"}
