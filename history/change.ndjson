@@ -82,3 +82,4 @@
 {"id":82,"listing_id":"42906690205856","run_id":349,"at":"2026-10-27T12:08:59.049Z","field":"price_eur","old_value":"370865","new_value":"368806"}
 {"id":83,"listing_id":"41882006953504","run_id":353,"at":"2026-10-28T12:52:47.088Z","field":"price_eur","old_value":"288880","new_value":"279990"}
 {"id":84,"listing_id":"426267925","run_id":353,"at":"2026-10-28T12:52:47.088Z","field":"price_eur","old_value":"329990","new_value":"324990"}
+{"id":85,"listing_id":"49281512123712","run_id":357,"at":"2026-10-29T22:44:14.722Z","field":"price_eur","old_value":"298750","new_value":"295750"}
