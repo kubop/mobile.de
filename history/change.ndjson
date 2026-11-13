@@ -91,3 +91,16 @@
 {"id":91,"listing_id":"53543043348864","run_id":389,"at":"2026-11-11T14:28:01.806Z","field":"sub_title","old_value":"Spider | Lift | McLaren Garantie 11/2027","new_value":"Spider | Lift | McLaren Garantie 10/2027"}
 {"id":92,"listing_id":"41137371579328","run_id":391,"at":"2026-11-12T15:11:48.757Z","field":"price_eur","old_value":"388960","new_value":"390960"}
 {"id":93,"listing_id":"461076533","run_id":391,"at":"2026-11-12T15:11:48.757Z","field":"price_eur","old_value":"278950","new_value":"275950"}
+{"id":94,"listing_id":"46776282898784","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"price_eur","old_value":"325000","new_value":"319000"}
+{"id":95,"listing_id":"462151649","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"price_eur","old_value":"309900","new_value":"304900"}
+{"id":96,"listing_id":"461283073","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"price_eur","old_value":"359900","new_value":"348900"}
+{"id":97,"listing_id":"461283073","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"mileage_km","old_value":"500","new_value":"1500"}
+{"id":98,"listing_id":"433020764","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"price_eur","old_value":"317900","new_value":"309900"}
+{"id":99,"listing_id":"432624461","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"price_eur","old_value":"289900","new_value":"284900"}
+{"id":100,"listing_id":"455696026","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"price_eur","old_value":"321000","new_value":"315000"}
+{"id":101,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"title","old_value":"McLaren 750S Spider CF Exterior I Mantis Green I B&W","new_value":"McLaren 750S Spider NP: 410.820,- I CF Exterior I B&W"}
+{"id":102,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"sub_title","old_value":"Spider CF Exterior I Mantis Green I B&W","new_value":"Spider NP: 410.820,- I CF Exterior I B&W"}
+{"id":103,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"price_eur","old_value":"394210","new_value":"354900"}
+{"id":104,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"mileage_km","old_value":"0","new_value":"200"}
+{"id":105,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"previous_owners","old_value":"0","new_value":"1"}
+{"id":106,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"condition","old_value":"New car","new_value":null}
