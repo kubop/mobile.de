@@ -104,3 +104,11 @@
 {"id":104,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"mileage_km","old_value":"0","new_value":"200"}
 {"id":105,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"previous_owners","old_value":"0","new_value":"1"}
 {"id":106,"listing_id":"447412024","run_id":394,"at":"2026-11-13T19:39:40.389Z","field":"condition","old_value":"New car","new_value":null}
+{"id":107,"listing_id":"426267925","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"price_eur","old_value":"324990","new_value":"289990"}
+{"id":108,"listing_id":"442497570","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"price_eur","old_value":"375380","new_value":"319990"}
+{"id":109,"listing_id":"442497570","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"previous_owners","old_value":null,"new_value":"1"}
+{"id":110,"listing_id":"442497570","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"condition","old_value":"New car","new_value":"Pre-Registration"}
+{"id":111,"listing_id":"41137371579328","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"price_eur","old_value":"390960","new_value":"339990"}
+{"id":112,"listing_id":"41137371579328","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"previous_owners","old_value":null,"new_value":"1"}
+{"id":113,"listing_id":"41137371579328","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"condition","old_value":"New car","new_value":"Pre-Registration"}
+{"id":114,"listing_id":"447954123","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"price_eur","old_value":"600000","new_value":"550000"}
