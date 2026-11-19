@@ -112,3 +112,7 @@
 {"id":112,"listing_id":"41137371579328","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"previous_owners","old_value":null,"new_value":"1"}
 {"id":113,"listing_id":"41137371579328","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"condition","old_value":"New car","new_value":"Pre-Registration"}
 {"id":114,"listing_id":"447954123","run_id":405,"at":"2026-11-18T20:28:59.234Z","field":"price_eur","old_value":"600000","new_value":"550000"}
+{"id":115,"listing_id":"54622285582464","run_id":407,"at":"2026-11-19T20:33:39.270Z","field":"title","old_value":"McLaren 750S Spider | Carbon Exterior | Black Alcant","new_value":"McLaren 750S Spider | Carbon Exterior | Black Alcantara"}
+{"id":116,"listing_id":"54622285582464","run_id":407,"at":"2026-11-19T20:33:39.270Z","field":"sub_title","old_value":"Spider | Carbon Exterior | Black Alcant","new_value":"Spider | Carbon Exterior | Black Alcantara"}
+{"id":117,"listing_id":"42906690205856","run_id":407,"at":"2026-11-19T20:33:39.270Z","field":"price_eur","old_value":"368806","new_value":"358160"}
+{"id":118,"listing_id":"38508149293152","run_id":407,"at":"2026-11-19T20:33:39.270Z","field":"price_eur","old_value":"362758","new_value":"364450"}
